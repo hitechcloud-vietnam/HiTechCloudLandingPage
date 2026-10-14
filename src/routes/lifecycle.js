@@ -6,7 +6,7 @@ const { HttpError } = require('../access');
 const { requireUser } = require('../auth');
 const { escapeHtml } = require('../render');
 const lifecycle = require('../lifecycle');
-const { createRateLimiter } = require('../ratelimit');
+const { rateLimit } = require('express-rate-limit');
 
 // Dashboard API: onboarding checklist and per-user email preferences (mounted at /api).
 function createLifecycleRouter({ db, access }) {
@@ -54,9 +54,15 @@ function page(title, message, appUrl, status) {
 // GET is the link in the email body; POST is RFC 8058 List-Unsubscribe-Post.
 function createUnsubscribeRouter({ db, config }) {
   const r = express.Router();
-  const limiter = createRateLimiter({ windowMs: 60_000, max: 20 });
+  // Public, unauthenticated endpoint: cap token checks per IP.
+  const limiter = rateLimit({
+    windowMs: 60_000,
+    limit: 20,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    handler: (_req, res) => res.status(429).type('text/plain').send('Bạn thao tác quá nhanh, vui lòng thử lại sau'),
+  });
   const unsubscribe = (req, res) => {
-    if (!limiter(req.ip)) return res.status(429).type('text/plain').send('Bạn thao tác quá nhanh, vui lòng thử lại sau');
     const t = lifecycle.verifyUnsubscribeToken(config, req.query.token);
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Robots-Tag', 'noindex');
@@ -71,8 +77,8 @@ function createUnsubscribeRouter({ db, config }) {
       .type('html')
       .send(page('Đã hủy nhận email', `Bạn sẽ không nhận "${lifecycle.PREF_LABEL[t.kind]}" nữa. Email giao dịch (xác minh, mật khẩu, thanh toán) vẫn được gửi khi cần.`, config.appUrl, 200));
   };
-  r.get('/email/unsubscribe', unsubscribe);
-  r.post('/email/unsubscribe', unsubscribe);
+  r.get('/email/unsubscribe', limiter, unsubscribe);
+  r.post('/email/unsubscribe', limiter, unsubscribe);
   return r;
 }
 
