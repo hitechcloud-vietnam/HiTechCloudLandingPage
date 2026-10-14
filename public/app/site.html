@@ -62,6 +62,42 @@
         <div class="hint">Trỏ bản ghi CNAME của tên miền về máy chủ HiTechCloud, sau đó nhập tên miền tại đây (gói Pro trở lên).</div>
         <button class="btn" style="margin-top:16px" type="submit">Lưu cài đặt</button>
       </form>
+    </div>
+
+    <form class="card stack" id="integrations-form" style="margin-top:16px">
+      <h3 style="margin:0">Theo dõi &amp; quảng cáo</h3>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
+        <div><label for="i-ga4">Google Analytics 4</label><input id="i-ga4" name="ga4Id" placeholder="G-XXXXXXXXXX"></div>
+        <div><label for="i-gtm">Google Tag Manager</label><input id="i-gtm" name="gtmId" placeholder="GTM-XXXXXX"></div>
+        <div><label for="i-fb">Facebook Pixel ID</label><input id="i-fb" name="fbPixelId" placeholder="123456789012345"></div>
+        <div><label for="i-tt">TikTok Pixel ID</label><input id="i-tt" name="tiktokPixelId" placeholder="CXXXXXXXXXXXX"></div>
+      </div>
+      <div><label for="i-fav">Favicon (URL https)</label><input id="i-fav" name="faviconUrl" placeholder="https://…/favicon.png"></div>
+      <div class="hint">Sự kiện chuyển đổi (Lead / generate_lead / SubmitForm) được tự gửi khi khách điền form thành công.</div>
+
+      <h3 style="margin:8px 0 0">Thông báo khi có lead mới</h3>
+      <label class="inline" style="font-weight:400"><input type="checkbox" id="i-owners" style="width:auto"> Gửi email cho chủ sở hữu và quản trị viên workspace</label>
+      <div><label for="i-emails">Email nhận thêm (tối đa 5, cách nhau bởi dấu phẩy)</label><input id="i-emails" name="notifyEmails" placeholder="sales@congty.vn, ..."></div>
+      <div><label for="i-hook">Webhook URL (Zapier, Make, n8n, CRM…)</label><input id="i-hook" name="webhookUrl" placeholder="https://…">
+        <div class="hint" id="hook-secret"></div></div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
+        <div><label for="i-tgtoken">Telegram bot token</label><input id="i-tgtoken" name="telegramBotToken" autocomplete="off">
+          <div class="hint" id="tg-hint">Tạo bot qua @BotFather.</div></div>
+        <div><label for="i-tgchat">Telegram chat ID</label><input id="i-tgchat" name="telegramChatId" placeholder="-100… hoặc @kenh"></div>
+      </div>
+
+      <h3 style="margin:8px 0 0">Mã tùy chỉnh <span class="badge badge-primary">Pro</span></h3>
+      <div><label for="i-head">Chèn vào &lt;head&gt;</label><textarea id="i-head" name="customHead" rows="3" placeholder="&lt;script&gt;…&lt;/script&gt;" style="font-family:monospace"></textarea></div>
+      <div><label for="i-body">Chèn cuối &lt;body&gt; (chat widget, Zalo OA…)</label><textarea id="i-body" name="customBody" rows="3" style="font-family:monospace"></textarea></div>
+
+      <div class="row" style="justify-content:flex-start">
+        <button class="btn" type="submit">Lưu tích hợp</button>
+        <button class="btn btn-ghost" type="button" id="notify-test">Gửi thông báo thử</button>
+        <span class="muted" id="integrations-status"></span>
+      </div>
+    </form>
+
+    <div class="card stack" style="margin-top:16px">
       <hr style="border:0;border-top:1px solid var(--border)">
       <div class="row">
         <div><strong>Xóa website</strong><div class="muted">Xóa vĩnh viễn toàn bộ trang và dữ liệu khách hàng.</div></div>
@@ -106,6 +142,18 @@ async function load() {
   $('#s-name').value = site.name;
   $('#s-domain').value = site.custom_domain || '';
   $('#export-csv').href = `/api/sites/${siteId}/leads?format=csv`;
+  const st = site.settings || {};
+  const f = $('#integrations-form');
+  for (const name of ['ga4Id', 'gtmId', 'fbPixelId', 'tiktokPixelId', 'faviconUrl', 'webhookUrl', 'telegramChatId', 'customHead', 'customBody']) {
+    f.elements[name].value = st[name] || '';
+  }
+  f.elements.notifyEmails.value = (st.notifyEmails || []).join(', ');
+  f.elements.telegramBotToken.value = '';
+  f.elements.telegramBotToken.placeholder = st.hasTelegramToken ? '•••••• (đã lưu, để trống để giữ nguyên, nhập - để xóa)' : '123456:ABC…';
+  $('#i-owners').checked = st.notifyOwners !== false;
+  $('#hook-secret').textContent = st.webhookSecret ? `Chữ ký: header X-HTC-Signature = sha256=HMAC_SHA256(body, "${st.webhookSecret}")` : '';
+  const canAdmin = site.role !== 'editor';
+  f.querySelectorAll('input, textarea, button').forEach((el) => { el.disabled = !canAdmin; });
   await Promise.all([loadPages(), loadLeads()]);
 }
 
@@ -169,6 +217,28 @@ $('#settings-form').onsubmit = async (e) => {
   e.preventDefault();
   showError();
   try { await api(`/sites/${siteId}`, { method: 'PATCH', body: formData(e.target) }); await load(); alert('Đã lưu'); } catch (err) { showError(err); }
+};
+
+$('#integrations-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  try {
+    const body = { ...formData(e.target), notifyOwners: $('#i-owners').checked };
+    site = { ...site, ...(await api(`/sites/${siteId}/settings`, { method: 'PATCH', body })) };
+    $('#integrations-status').textContent = 'Đã lưu';
+    await load();
+  } catch (err) { showError(err); window.scrollTo(0, 0); }
+};
+
+$('#notify-test').onclick = async () => {
+  $('#integrations-status').textContent = 'Đang gửi…';
+  try {
+    const r = await api(`/sites/${siteId}/notify-test`, { method: 'POST', body: {} });
+    const names = { email: 'Email', webhook: 'Webhook', telegram: 'Telegram' };
+    $('#integrations-status').textContent = Object.keys(r).length
+      ? Object.entries(r).map(([k, v]) => `${names[k]}: ${v === 'ok' ? '✓' : v}`).join(' · ')
+      : 'Chưa cấu hình kênh nào';
+  } catch (err) { showError(err); }
 };
 
 $('#delete-site').onclick = async () => {

@@ -6,6 +6,7 @@ const { HttpError } = require('../access');
 const { addMonths } = require('../billing');
 const { createRateLimiter } = require('../ratelimit');
 const { acceptInvitation, createInvitation } = require('./account');
+const siteSettings = require('../siteSettings');
 const { transaction } = require('../db');
 const { PLANS, workspacePlan, effectivePlanId, publicPlan } = require('../plans');
 const { renderTemplate, listTemplates, listBlocks, BASE_CSS } = require('../templates');
@@ -46,7 +47,7 @@ function csvCell(value) {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
-function createApiRouter({ db, sessions, access, billing, mailer, config }) {
+function createApiRouter({ db, sessions, access, billing, mailer, config, notifier }) {
   const r = express.Router();
   const loginLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 10 });
   const signupLimiter = createRateLimiter({ windowMs: 3600_000, max: 10 });
@@ -348,7 +349,8 @@ function createApiRouter({ db, sessions, access, billing, mailer, config }) {
     const { ws } = access.workspace(req.user, req.params.wid);
     return db
       .prepare(
-        `SELECT s.*, (SELECT COUNT(*) FROM pages p WHERE p.site_id = s.id) AS page_count
+        `SELECT s.id, s.workspace_id, s.name, s.subdomain, s.custom_domain, s.created_at,
+           (SELECT COUNT(*) FROM pages p WHERE p.site_id = s.id) AS page_count
          FROM sites s WHERE s.workspace_id = ? ORDER BY s.id DESC`
       )
       .all(ws.id);
@@ -377,14 +379,37 @@ function createApiRouter({ db, sessions, access, billing, mailer, config }) {
         return Number(s.lastInsertRowid);
       });
       res.status(201);
-      return db.prepare('SELECT * FROM sites WHERE id = ?').get(id);
+      return siteView(db.prepare('SELECT * FROM sites WHERE id = ?').get(id), 'owner');
     } catch (err) {
       if (isUniqueViolation(err)) throw new HttpError(409, 'Tên miền phụ đã được sử dụng');
       throw err;
     }
   }));
 
-  r.get('/sites/:sid', h((req) => access.site(req.user, req.params.sid).site));
+  function siteView(site, role) {
+    const { settings_json, ...rest } = site;
+    const settings = siteSettings.publicSettings(siteSettings.parse(site));
+    if (role === 'editor') delete settings.webhookSecret;
+    return { ...rest, role, settings };
+  }
+
+  r.get('/sites/:sid', h((req) => {
+    const { site, role } = access.site(req.user, req.params.sid);
+    return siteView(site, role);
+  }));
+
+  r.patch('/sites/:sid/settings', h((req) => {
+    const { site, role } = access.site(req.user, req.params.sid, 'admin');
+    const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(site.workspace_id);
+    const next = siteSettings.applyUpdate(siteSettings.parse(site), req.body || {}, workspacePlan(ws));
+    db.prepare('UPDATE sites SET settings_json = ? WHERE id = ?').run(JSON.stringify(next), site.id);
+    return siteView(db.prepare('SELECT * FROM sites WHERE id = ?').get(site.id), role);
+  }));
+
+  r.post('/sites/:sid/notify-test', ha(async (req) => {
+    const { site } = access.site(req.user, req.params.sid, 'admin');
+    return notifier.leadCreated({ site, pageSlug: 'index', data: { name: 'Khách hàng thử nghiệm', phone: '0900000000', message: 'Đây là thông báo thử từ HiTechCloud' } });
+  }));
 
   r.patch('/sites/:sid', h((req) => {
     const { site } = access.site(req.user, req.params.sid, 'admin');
@@ -405,7 +430,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config }) {
       if (isUniqueViolation(err)) throw new HttpError(409, 'Tên miền đã được gắn với website khác');
       throw err;
     }
-    return db.prepare('SELECT * FROM sites WHERE id = ?').get(site.id);
+    return siteView(db.prepare('SELECT * FROM sites WHERE id = ?').get(site.id), 'admin');
   }));
 
   r.delete('/sites/:sid', h((req) => {
@@ -415,7 +440,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config }) {
   }));
 
   // ---------- Pages ----------
-  const PAGE_FIELDS = 'id, site_id, title, slug, meta_description, published_at, updated_at';
+  const PAGE_FIELDS = 'id, site_id, title, slug, meta_description, og_image, published_at, updated_at';
 
   r.get('/sites/:sid/pages', h((req) => {
     const { site } = access.site(req.user, req.params.sid);
@@ -463,15 +488,21 @@ function createApiRouter({ db, sessions, access, billing, mailer, config }) {
     const { page } = access.page(req.user, req.params.pid);
     const title = req.body.title !== undefined ? str(req.body.title, { required: true, field: 'Tiêu đề', max: 200 }) : page.title;
     const meta = req.body.metaDescription !== undefined ? str(req.body.metaDescription, { max: 300, field: 'Mô tả' }) : page.meta_description;
+    let ogImage = page.og_image;
+    if (req.body.ogImage !== undefined) {
+      ogImage = str(req.body.ogImage, { max: 500, field: 'Ảnh chia sẻ' });
+      if (ogImage && !/^https?:\/\/[^\s"'<>]+$|^\/uploads\/[\w./-]+$/.test(ogImage)) throw new HttpError(400, 'Ảnh chia sẻ phải là URL http(s)');
+    }
     let pageSlug = page.slug;
     if (req.body.slug !== undefined && req.body.slug !== page.slug) {
       if (page.slug === 'index') throw new HttpError(400, 'Không thể đổi đường dẫn trang chủ');
       pageSlug = slug(req.body.slug, 'Đường dẫn');
     }
     try {
-      db.prepare("UPDATE pages SET title = ?, meta_description = ?, slug = ?, updated_at = datetime('now') WHERE id = ?").run(
+      db.prepare("UPDATE pages SET title = ?, meta_description = ?, og_image = ?, slug = ?, updated_at = datetime('now') WHERE id = ?").run(
         title,
         meta,
+        ogImage,
         pageSlug,
         page.id
       );

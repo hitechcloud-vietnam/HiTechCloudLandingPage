@@ -12,6 +12,7 @@ const PLANS = {
     maxLeadsPerMonth: 100,
     customDomain: false,
     removeBranding: false,
+    customCode: false,
   },
   pro: {
     id: 'pro',
@@ -23,6 +24,7 @@ const PLANS = {
     maxLeadsPerMonth: 10000,
     customDomain: true,
     removeBranding: true,
+    customCode: true,
   },
   business: {
     id: 'business',
@@ -34,6 +36,7 @@ const PLANS = {
     maxLeadsPerMonth: Infinity,
     customDomain: true,
     removeBranding: true,
+    customCode: true,
   },
 };
 

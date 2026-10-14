@@ -44,6 +44,8 @@
     <input id="seo-title" name="title" maxlength="200" required>
     <label for="seo-desc">Mô tả (meta description)</label>
     <textarea id="seo-desc" name="metaDescription" rows="3" maxlength="300"></textarea>
+    <label for="seo-og">Ảnh chia sẻ Facebook/Zalo (og:image)</label>
+    <input id="seo-og" name="ogImage" maxlength="500" placeholder="https://… (khuyên dùng 1200×630)">
     <div class="dialog-actions">
       <button class="btn btn-ghost" type="button" id="seo-cancel">Hủy</button>
       <button class="btn" type="submit">Lưu</button>
@@ -165,6 +167,7 @@
   $('#seo-btn').onclick = () => {
     $('#seo-title').value = page.title;
     $('#seo-desc').value = page.meta_description || '';
+    $('#seo-og').value = page.og_image || '';
     $('#seo-error').textContent = '';
     seo.showModal();
   };
@@ -176,6 +179,7 @@
       await api(`/pages/${page.id}`, { method: 'PATCH', body });
       page.title = body.title;
       page.meta_description = body.metaDescription;
+      page.og_image = body.ogImage;
       $('#title').textContent = `${page.site.name} / ${page.title}`;
       seo.close();
     } catch (err) { $('#seo-error').textContent = err.message; }
