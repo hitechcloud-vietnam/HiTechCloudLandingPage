@@ -6,6 +6,7 @@ const { renderPage, renderMessage } = require('../render');
 const { monthStart } = require('./api');
 const { createRateLimiter } = require('../ratelimit');
 const { parse: parseSettings } = require('../siteSettings');
+const { pickVariant } = require('./abtests');
 
 // Public base URL of a site, used for canonical links and sitemaps.
 function siteBaseUrl(site, config) {
@@ -35,12 +36,15 @@ function createSitesRouter({ db, config, access, notifier }) {
   }
 
   function servePublished(req, res, site, pageSlug, sandbox) {
-    const page = db
+    const requested = db
       .prepare('SELECT * FROM pages WHERE site_id = ? AND slug = ? AND published_html IS NOT NULL')
       .get(site.id, pageSlug || 'index');
-    if (!page) return sendHtml(res, renderMessage('404', 'Trang không tồn tại hoặc chưa được xuất bản'), sandbox);
+    if (!requested) return sendHtml(res, renderMessage('404', 'Trang không tồn tại hoặc chưa được xuất bản'), sandbox);
+    const submitted = req.query.submitted === '1';
+    // Under a running A/B test the visitor may get the variant at the same URL.
+    const page = submitted ? requested : pickVariant(db, requested, req, res);
     const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(site.workspace_id);
-    if (!BOT_RE.test(req.get('user-agent') || '')) {
+    if (!submitted && !BOT_RE.test(req.get('user-agent') || '')) {
       db.prepare(
         'INSERT INTO page_views (page_id, day, views) VALUES (?, ?, 1) ON CONFLICT (page_id, day) DO UPDATE SET views = views + 1'
       ).run(page.id, new Date().toISOString().slice(0, 10));
@@ -55,9 +59,9 @@ function createSitesRouter({ db, config, access, notifier }) {
           html: page.published_html,
           css: page.published_css,
           showBranding: !workspacePlan(ws).removeBranding,
-          notice: req.query.submitted === '1' ? 'Cảm ơn bạn! Thông tin đã được gửi thành công.' : '',
+          notice: submitted ? 'Cảm ơn bạn! Thông tin đã được gửi thành công.' : '',
           settings: parseSettings(site),
-          canonicalUrl: `${siteBaseUrl(site, config)}/${page.slug === 'index' ? '' : page.slug}`,
+          canonicalUrl: `${siteBaseUrl(site, config)}/${requested.slug === 'index' ? '' : requested.slug}`,
         }),
       },
       sandbox

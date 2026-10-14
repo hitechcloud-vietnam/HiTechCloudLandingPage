@@ -11,6 +11,7 @@ const { createMailer } = require('./mailer');
 const { createAccountRouter } = require('./routes/account');
 const { createNotifier } = require('./notify');
 const { createContentRouter } = require('./routes/content');
+const { createAbRouter } = require('./routes/abtests');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -88,6 +89,7 @@ function createApp({ db, config }) {
   app.use('/api', createAccountRouter({ db, config, mailer, sessions }));
   app.use('/api', createApiRouter({ db, sessions, access, billing, mailer, config, notifier }).router);
   app.use('/api', createContentRouter({ db, config: { ...config, uploadsDir }, access }));
+  app.use('/api', createAbRouter({ db, access }));
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Không tìm thấy' }));
 
   // Editor vendor assets (GrapesJS + plugins BSD-3-Clause, Font Awesome OFL/MIT).

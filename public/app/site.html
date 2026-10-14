@@ -29,6 +29,7 @@
   <div class="tabs" role="tablist">
     <button class="active" data-tab="pages">Trang</button>
     <button data-tab="leads">Khách hàng tiềm năng</button>
+    <button data-tab="abtests">A/B testing</button>
     <button data-tab="settings">Cài đặt</button>
   </div>
 
@@ -57,6 +58,20 @@
       <thead><tr><th>Thời gian</th><th>Thông tin</th><th>Nguồn</th><th>Trạng thái</th><th>Ghi chú</th><th></th></tr></thead>
       <tbody id="leads"></tbody>
     </table></div>
+  </section>
+
+  <section data-panel="abtests" hidden>
+    <form class="card stack" id="ab-form">
+      <h3 style="margin:0">Tạo thử nghiệm mới <span class="badge badge-primary">Pro</span></h3>
+      <p class="muted" style="margin:0">Khách vào trang gốc sẽ được chia ngẫu nhiên sang trang biến thể theo tỉ lệ bạn chọn (mỗi khách luôn thấy cùng một phiên bản). Mẹo: dùng “Nhân bản” để tạo biến thể rồi chỉnh sửa và xuất bản.</p>
+      <div class="row" style="justify-content:flex-start;align-items:flex-end">
+        <div style="flex:1 1 200px"><label for="ab-a">Trang gốc (A)</label><select id="ab-a" name="pageId"></select></div>
+        <div style="flex:1 1 200px"><label for="ab-b">Biến thể (B)</label><select id="ab-b" name="variantPageId"></select></div>
+        <div style="flex:0 1 160px"><label for="ab-split">% khách sang B: <span id="ab-split-val">50</span>%</label><input id="ab-split" name="split" type="range" min="5" max="95" step="5" value="50"></div>
+        <button class="btn" type="submit">Bắt đầu</button>
+      </div>
+    </form>
+    <div id="ab-list" class="stack" style="margin-top:16px"></div>
   </section>
 
   <section data-panel="settings" hidden>
@@ -178,7 +193,7 @@ async function load() {
   $('#hook-secret').textContent = st.webhookSecret ? `Chữ ký: header X-HTC-Signature = sha256=HMAC_SHA256(body, "${st.webhookSecret}")` : '';
   const canAdmin = site.role !== 'editor';
   f.querySelectorAll('input, textarea, button').forEach((el) => { el.disabled = !canAdmin; });
-  await Promise.all([loadPages(), loadLeads()]);
+  await Promise.all([loadPages(), loadLeads(), loadAbTests()]);
 }
 
 async function loadPages() {
@@ -224,6 +239,53 @@ async function loadLeads() {
     }).join('')
     : '<tr><td colspan="6" class="muted">Chưa có dữ liệu. Mọi biểu mẫu trên trang đã xuất bản sẽ tự động gửi về đây.</td></tr>';
 }
+
+async function loadAbTests() {
+  const [pages, tests] = await Promise.all([api(`/sites/${siteId}/pages`), api(`/sites/${siteId}/ab-tests`)]);
+  const published = pages.filter((p) => p.published_at);
+  const opts = published.map((p) => `<option value="${p.id}">${esc(p.title)} (/${p.slug === 'index' ? '' : esc(p.slug)})</option>`).join('');
+  $('#ab-a').innerHTML = opts;
+  $('#ab-b').innerHTML = opts;
+  if (published[1]) $('#ab-b').value = published[1].id;
+  const row = (label, page, st, best) => `<tr ${best ? 'style="background:#f0fdf4"' : ''}><td><b>${label}</b> ${esc(page.title || '')}</td><td>${st.views.toLocaleString('vi-VN')}</td><td>${st.leads}</td><td><b>${st.rate}%</b></td></tr>`;
+  $('#ab-list').innerHTML = tests.length
+    ? tests.map((t) => {
+      const { a, b, confidence } = t.stats;
+      const leader = b.rate > a.rate ? 'b' : a.rate > b.rate ? 'a' : '';
+      const verdict = confidence >= 95
+        ? `<span class="badge badge-success">Có ý nghĩa thống kê (${confidence}%)</span> Phiên bản ${leader.toUpperCase()} đang tốt hơn.`
+        : `<span class="badge">Độ tin cậy ${confidence}%</span> Chưa đủ dữ liệu để kết luận (cần ≥ 95%).`;
+      return `<div class="card stack">
+        <div class="row"><strong>/${t.control.slug === 'index' ? '' : esc(t.control.slug)} · chia ${100 - t.split}/${t.split}</strong>
+          ${t.status === 'running' ? '<span class="badge badge-primary">Đang chạy</span>' : `<span class="badge">Đã dừng${t.winner ? ` · thắng: ${t.winner.toUpperCase()}` : ''}</span>`}</div>
+        <div class="table-wrap"><table><thead><tr><th>Phiên bản</th><th>Lượt xem</th><th>Lead</th><th>Chuyển đổi</th></tr></thead>
+        <tbody>${row('A', t.control, a, leader === 'a')}${row('B', t.variant, b, leader === 'b')}</tbody></table></div>
+        <div class="muted">${verdict}</div>
+        ${t.status === 'running' ? `<div class="row" style="justify-content:flex-start">
+          <button class="btn btn-sm" data-ab-stop="${t.id}" data-winner="b">Chọn B làm trang chính</button>
+          <button class="btn btn-ghost btn-sm" data-ab-stop="${t.id}" data-winner="a">Giữ A, dừng thử nghiệm</button></div>` : ''}
+      </div>`;
+    }).join('')
+    : '<div class="card muted">Chưa có thử nghiệm nào.</div>';
+}
+
+$('#ab-split').oninput = (e) => { $('#ab-split-val').textContent = e.target.value; };
+$('#ab-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  const body = formData(e.target);
+  try {
+    await api(`/sites/${siteId}/ab-tests`, { method: 'POST', body: { pageId: Number(body.pageId), variantPageId: Number(body.variantPageId), split: Number(body.split) } });
+    await loadAbTests();
+  } catch (err) { showError(err); }
+};
+$('#ab-list').onclick = async (e) => {
+  const id = e.target.dataset.abStop;
+  if (!id) return;
+  const w = e.target.dataset.winner;
+  if (!confirm(w === 'b' ? 'Nội dung trang B sẽ thay thế trang gốc. Tiếp tục?' : 'Dừng thử nghiệm và giữ trang A?')) return;
+  try { await api(`/ab-tests/${id}/stop`, { method: 'POST', body: { winner: w } }); await Promise.all([loadAbTests(), loadPages()]); } catch (err) { showError(err); }
+};
 
 $('#lead-filters').onsubmit = (e) => { e.preventDefault(); loadLeads().catch(showError); };
 
