@@ -8,6 +8,7 @@ const { createPayOS } = require('./payments/payos');
 const { createPay2S } = require('./payments/pay2s');
 const { HttpError } = require('./access');
 const { normalizeCode, findCoupon, applyCoupon } = require('./coupons');
+const { autoRequestInvoice } = require('./invoices');
 const { logger } = require('./logger');
 
 function createProviders(config) {
@@ -71,6 +72,8 @@ function createBilling({ db, config, mailer }) {
       if (fresh.status === 'paid') return false;
       db.prepare("UPDATE orders SET status = 'paid', paid_at = datetime('now'), provider_ref = COALESCE(?, provider_ref) WHERE id = ?").run(ref || null, order.id);
       if (fresh.coupon_code) redeemCoupon(fresh);
+      // Workspaces opting in get a VAT invoice request with today's billing profile.
+      autoRequestInvoice(db, fresh);
 
       const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(order.workspace_id);
       if (!ws) return true;

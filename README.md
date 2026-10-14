@@ -19,7 +19,8 @@ Lõi trình thiết kế dùng [GrapesJS](https://github.com/GrapesJS/grapesjs).
 | Gói dịch vụ | Miễn phí / Pro / Business, giới hạn số website, trang, thành viên, lead/tháng, tên miền riêng, gỡ nhãn "Tạo bởi HiTechCloud" |
 | Thanh toán | **payOS** (VietQR) và **Pay2S**. Thanh toán theo chu kỳ 1 tháng hoặc 12 tháng (tặng 2 tháng). Gói tự hết hạn và quay về gói Miễn phí. Gia hạn được cộng dồn vào thời gian còn lại. Webhook xác thực chữ ký HMAC, xử lý trùng lặp an toàn (idempotent) và đối chiếu số tiền |
 | Mã giảm giá | Super admin tạo mã giảm theo % hoặc số tiền cố định, giới hạn theo gói, chu kỳ (1/12 tháng), số lượt dùng và ngày hết hạn; bật/tắt bất kỳ lúc nào. Khách nhập mã ở tab Gói dịch vụ để xem giá sau giảm. Cổng thanh toán nhận số tiền đã giảm (tối thiểu 10.000đ); mã giảm 100% kích hoạt gói ngay, không qua cổng. Lượt dùng chỉ được tính khi đơn đã thanh toán. Email xác nhận ghi rõ giá gốc, số tiền giảm và số tiền đã trả |
-| Quản trị nền tảng | `/app/admin`: số người dùng, workspace trả phí, MRR, doanh thu, danh sách khách hàng, lịch sử giao dịch, cấp gói thủ công |
+| Hóa đơn VAT | Khách lưu thông tin xuất hóa đơn (doanh nghiệp/cá nhân, mã số thuế) và gửi yêu cầu cho từng đơn đã thanh toán, hoặc bật tự động gửi khi thanh toán. Kế toán xuất hóa đơn trên phần mềm hóa đơn điện tử, xuất CSV và ghi lại số hóa đơn trong `/app/admin`; khách nhận email kèm mã tra cứu. Xem [Hóa đơn VAT](#hóa-đơn-vat) |
+| Quản trị nền tảng | `/app/admin`: số người dùng, workspace trả phí, MRR, doanh thu, danh sách khách hàng, lịch sử giao dịch, cấp gói thủ công, yêu cầu xuất hóa đơn VAT |
 | Thống kê | Tab “Thống kê” cho từng website: chọn 7/30/90 ngày, lượt xem (bỏ qua bot), lead, tỉ lệ chuyển đổi và % thay đổi so với kỳ trước; biểu đồ theo ngày, trang hiệu quả nhất, nguồn khách hàng (UTM, website giới thiệu, trực tiếp) và trạng thái lead |
 | Tích hợp marketing | Google Analytics 4, Google Tag Manager, Facebook Pixel, TikTok Pixel. Sự kiện chuyển đổi (Lead) gửi tự động khi khách điền form. Favicon, og:image, canonical, `sitemap.xml`, `robots.txt`. Chèn mã tùy chỉnh vào `<head>`/`<body>` (gói Pro trở lên) |
 | API công khai | REST API `/api/v1` cho Zapier/Make/CRM bằng API key của workspace: đọc website, trang, lead; cập nhật trạng thái lead; xuất bản trang. Key chỉ lưu mã băm, thu hồi được, giới hạn 120 yêu cầu/phút (gói Pro trở lên) |
@@ -166,6 +167,33 @@ Cổng nào có đủ biến môi trường thì sẽ hiện trong tab **Gói d�
 >
 > Trước khi chạy production, cần **chạy thử trên sandbox Pay2S** để xác nhận tên trường URL thanh toán trả về (`payUrl`), mã thành công và nội dung phản hồi IPN mà Pay2S yêu cầu.
 
+## Hóa đơn VAT
+
+Hệ thống **chưa tích hợp API nhà cung cấp hóa đơn điện tử**. Phần mềm chỉ thu thập thông tin người mua và quản lý quy trình. Kế toán xuất hóa đơn GTGT điện tử thủ công trên phần mềm đang dùng (MISA meInvoice, VNPT, Viettel S-Invoice…) rồi ghi lại số hóa đơn.
+
+1. **Thông tin xuất hóa đơn** (tab **Gói dịch vụ**, chỉ chủ sở hữu/quản trị viên). Mỗi workspace có một bộ thông tin:
+   - Loại người mua: doanh nghiệp/tổ chức hoặc cá nhân.
+   - Doanh nghiệp: tên đơn vị, mã số thuế và địa chỉ là bắt buộc. Mã số thuế gồm 10 chữ số, hoặc 10 chữ số kèm `-` và 3 chữ số với đơn vị phụ thuộc, ví dụ `0312345678-001`.
+   - Cá nhân: bắt buộc họ tên. Mã số thuế không bắt buộc, gồm 10 chữ số hoặc 12 chữ số (số định danh cá nhân).
+   - Email nhận hóa đơn (bắt buộc) và tên người mua hàng (không bắt buộc với doanh nghiệp).
+2. **Yêu cầu hóa đơn:** trong *Lịch sử thanh toán*, bấm **Yêu cầu hóa đơn** ở đơn đã thanh toán. Đơn 0đ (giảm 100%) không cần xuất hóa đơn. Yêu cầu **lưu bản sao thông tin người mua** tại thời điểm gửi, nên sửa thông tin sau đó không làm thay đổi yêu cầu cũ. Mỗi đơn chỉ có một yêu cầu. Yêu cầu bị kế toán hủy có thể gửi lại sau khi sửa thông tin.
+3. **Tự động:** bật *Tự động gửi yêu cầu xuất hóa đơn* thì mỗi đơn vừa thanh toán (webhook, URL chuyển hướng về) sẽ tự tạo yêu cầu. Việc này nằm trong cùng giao dịch xác nhận thanh toán và chỉ chạy một lần cho mỗi đơn.
+4. **Kế toán** (super admin, tab **Hóa đơn VAT** trong `/app/admin`):
+   - Lọc theo trạng thái *Đang xử lý / Đã xuất / Đã hủy*.
+   - Xuất CSV (UTF-8 có BOM, mở được bằng Excel), gồm mã đơn, mã giao dịch, ngày thanh toán (giờ Việt Nam), số tiền, gói, số tháng và thông tin người mua.
+   - Bấm **Đã xuất** để nhập số hóa đơn, mã tra cứu và link tra cứu, hoặc **Hủy** kèm lý do. Cả hai đều gửi email tới địa chỉ nhận hóa đơn.
+   - Khách thấy trạng thái “Đang xử lý” hoặc “Đã xuất – số …” kèm link tra cứu.
+
+Thông tin xuất hóa đơn và các yêu cầu có trong tệp *Tải dữ liệu của tôi*. Chúng bị xóa cùng workspace.
+
+| Method | Đường dẫn | Mô tả |
+|---|---|---|
+| GET/PUT | `/api/workspaces/:id/billing-profile` | Thông tin xuất hóa đơn `{buyerType: company\|individual, companyName, taxCode, address, email, buyerName?, autoInvoice?}` (chủ sở hữu, quản trị viên) |
+| POST | `/api/orders/:id/invoice-request` | Gửi yêu cầu xuất hóa đơn cho đơn đã thanh toán (lưu bản sao thông tin); 409 nếu đơn đã có yêu cầu |
+| GET | `/api/admin/invoices[?status=pending\|issued\|cancelled&format=csv]` | Danh sách / xuất CSV yêu cầu hóa đơn (chỉ super admin) |
+| POST | `/api/admin/invoices/:id/issue` | Ghi nhận đã xuất `{invoiceNo, lookupCode?, lookupUrl?}` và gửi email cho khách |
+| POST | `/api/admin/invoices/:id/cancel` | Hủy yêu cầu `{reason}` và gửi email cho khách |
+
 ## Chất lượng lead & chống spam
 
 Mỗi lần gửi form đi qua các bước sau (`src/leadGuard.js`):
@@ -199,7 +227,8 @@ npx playwright show-report                    # xem báo cáo HTML (playwright-r
   - `editor.spec.js`: tạo website từ mẫu → mở trình thiết kế → sửa tiêu đề → lưu (“Đã lưu”) → tải ảnh qua Asset Manager → xuất bản → kiểm tra `/p/<tên-miền-phụ>`; tài khoản chưa xác minh không xuất bản được.
   - `leads.spec.js`: gửi form trên trang đã xuất bản kèm UTM → banner cảm ơn → lead hiện trong tab “Khách hàng tiềm năng” với nguồn → đổi trạng thái, lọc.
   - `billing.spec.js`: bảng giá, chặn tính năng Pro ở gói miễn phí, super-admin cấp gói Pro trong trang quản trị → tên miền riêng (hướng dẫn DNS) và A/B testing hoạt động. Thanh toán qua cổng thật không chạy ở đây (đã có test API với gateway giả trong `test/billing.test.js`).
-  - `a11y.spec.js`: trang chủ, đăng nhập, đăng ký, quên mật khẩu, bảng điều khiển (kể cả tab Cài đặt) và từng tab của trang website ở 375px: không lỗi console, không cuộn ngang, mọi ô nhập liệu đang hiển thị đều có nhãn/`aria-label`, có `lang="vi"`.
+  - `invoices.spec.js`: khách lưu thông tin xuất hóa đơn → gửi yêu cầu cho một đơn đã thanh toán (đơn được ghi thẳng vào SQLite của server e2e vì không có cổng thanh toán) → super admin ghi số hóa đơn trong tab “Hóa đơn VAT” → khách nhận email và thấy “Đã xuất – số …”.
+  - `a11y.spec.js`: trang chủ, đăng nhập, đăng ký, quên mật khẩu, bảng điều khiển (kể cả tab Gói dịch vụ với form thông tin xuất hóa đơn và tab Cài đặt) và từng tab của trang website ở 375px: không lỗi console, không cuộn ngang, mọi ô nhập liệu đang hiển thị đều có nhãn/`aria-label`, có `lang="vi"`.
 - Trên CI (job `e2e` trong `.github/workflows/ci.yml`) test được chạy lại 1 lần nếu lỗi, lưu trace ở lần chạy lại và tải lên artifact `playwright-report` (kèm `test-results/`, `e2e/server.log`) khi thất bại.
 
 ## Kiến trúc
@@ -214,6 +243,7 @@ src/
   access.js          Kiểm tra quyền và cách ly dữ liệu theo workspace
   plans.js           Định nghĩa gói, giới hạn, giá theo chu kỳ, hết hạn gói
   billing.js         Tạo đơn, xử lý webhook/return, kích hoạt và gia hạn gói
+  invoices.js        Thông tin xuất hóa đơn VAT, kiểm tra mã số thuế, lưu bản sao khi gửi yêu cầu
   payments/payos.js  Kết nối payOS (ký và xác thực HMAC-SHA256)
   payments/pay2s.js  Kết nối Pay2S (ký và xác thực m2signature)
   templates.js       Section và mẫu landing page
@@ -227,6 +257,7 @@ src/
   safety.js          Chấm điểm rủi ro lừa đảo, tạm ngưng website / tài khoản
   routes/safety.js   Form báo cáo vi phạm /_htc/report, API quản trị an toàn nội dung
   routes/abtests.js  A/B testing (chia lưu lượng, thống kê, chọn phiên bản thắng)
+  routes/invoices.js Yêu cầu xuất hóa đơn VAT (khách hàng) và xử lý, xuất CSV (super admin)
   http.js, usage.js  Tiện ích dùng chung (bọc handler, đếm mức sử dụng)
   siteSettings.js    Cài đặt tích hợp marketing và thông báo theo từng website
   notify.js          Gửi thông báo lead (email / webhook / Telegram / Slack / Discord / Google Sheets)
@@ -256,7 +287,10 @@ test/                Test API bằng node:test
 | GET/POST/DELETE | `/api/workspaces/:id/members[/:uid]` | Thành viên |
 | POST | `/api/workspaces/:id/checkout` | Tạo đơn thanh toán `{plan, months, provider, coupon?}`, trả về `checkoutUrl` (đơn giảm 100% trả về `paid: true`) |
 | POST | `/api/workspaces/:id/coupon/preview` | Xem giá với mã giảm giá `{coupon, plan, months}` → `{valid, listAmount, discount, amount, message}` |
-| GET | `/api/workspaces/:id/orders` | Lịch sử thanh toán |
+| GET | `/api/workspaces/:id/orders` | Lịch sử thanh toán (kèm trạng thái hóa đơn VAT `invoice`) |
+| GET/PUT | `/api/workspaces/:id/billing-profile` | Thông tin xuất hóa đơn VAT (xem [Hóa đơn VAT](#hóa-đơn-vat)) |
+| POST | `/api/orders/:id/invoice-request` | Yêu cầu xuất hóa đơn VAT cho đơn đã thanh toán |
+| GET/POST | `/api/admin/invoices`, `/api/admin/invoices/:id/issue`, `/cancel` | Xử lý yêu cầu hóa đơn VAT, xuất CSV (chỉ super admin) |
 | POST | `/api/billing/webhooks/payos`, `/api/billing/webhooks/pay2s` | Webhook / IPN từ cổng thanh toán |
 | GET | `/api/admin/stats`, `/api/admin/workspaces`, `/api/admin/orders` | Quản trị nền tảng |
 | POST | `/api/workspaces/:id/plan` | Cấp gói thủ công `{plan, months?}` (chỉ super admin) |
@@ -318,7 +352,7 @@ curl -X POST -H "Authorization: Bearer $HTC_KEY" $HTC_URL/api/v1/pages/7/publish
 Hỗ trợ các quyền của chủ thể dữ liệu theo Nghị định 13/2023/NĐ-CP về bảo vệ dữ liệu cá nhân. Người dùng thao tác trong **Cài đặt** của dashboard:
 
 - **Xác minh email:** khi đăng ký, hệ thống gửi một liên kết dùng một lần, hiệu lực 24 giờ (token chỉ lưu dạng băm SHA-256). Chưa xác minh vẫn dùng được ứng dụng nhưng không xuất bản trang và không thanh toán được. Có thể gửi lại email, tối đa 3 lần/giờ. Nhận lời mời qua email cũng được tính là đã xác minh. Tài khoản tạo trước khi có tính năng này được coi là đã xác minh.
-- **Tải dữ liệu của tôi:** tệp JSON gồm hồ sơ, danh sách workspace tham gia và vai trò. Với workspace bạn sở hữu, tệp có thêm website, trang (HTML/CSS), lead và đơn hàng. Tệp không chứa mật khẩu băm, token, khóa tích hợp (như Telegram bot token) hay thông tin của thành viên khác.
+- **Tải dữ liệu của tôi:** tệp JSON gồm hồ sơ, danh sách workspace tham gia và vai trò. Với workspace bạn sở hữu, tệp có thêm website, trang (HTML/CSS), lead, đơn hàng, thông tin xuất hóa đơn và các yêu cầu hóa đơn VAT. Tệp không chứa mật khẩu băm, token, khóa tích hợp (như Telegram bot token) hay thông tin của thành viên khác.
 - **Xóa tài khoản:** cần nhập mật khẩu và gõ `XOA TAI KHOAN`. Hệ thống xóa vĩnh viễn tài khoản, session và các workspace bạn sở hữu (kèm website, trang, lead, đơn hàng), sau đó gửi email xác nhận. Nếu bạn còn sở hữu workspace có thành viên khác thì phải chuyển quyền sở hữu hoặc xóa các thành viên trước.
 - **Chuyển quyền sở hữu:** chủ sở hữu chuyển workspace cho một quản trị viên hoặc biên tập viên hiện có (tab **Thành viên**). Chủ sở hữu cũ trở thành quản trị viên.
 
@@ -397,7 +431,7 @@ Giao diện: `/app/admin` → tab **An toàn nội dung** (trang bị gắn cờ
 
 ## Lộ trình tiếp theo
 
-- Xuất hóa đơn VAT điện tử sau khi thanh toán.
+- Tích hợp API nhà cung cấp hóa đơn điện tử (MISA/VNPT/Viettel) để tự phát hành hóa đơn VAT (hiện kế toán xuất thủ công, xem [Hóa đơn VAT](#hóa-đơn-vat)).
 - Lưu ảnh lên S3-compatible storage (hiện lưu trên đĩa, trong volume `/data`).
 - Gửi thông báo lead qua Zalo OA.
 - Chuyển sang PostgreSQL khi mở rộng nhiều instance.
