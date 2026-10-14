@@ -23,7 +23,7 @@ Lõi trình thiết kế dùng [GrapesJS](https://github.com/GrapesJS/grapesjs).
 | Thống kê | Tab “Thống kê” cho từng website: chọn 7/30/90 ngày, lượt xem (bỏ qua bot), lead, tỉ lệ chuyển đổi và % thay đổi so với kỳ trước; biểu đồ theo ngày, trang hiệu quả nhất, nguồn khách hàng (UTM, website giới thiệu, trực tiếp) và trạng thái lead |
 | Tích hợp marketing | Google Analytics 4, Google Tag Manager, Facebook Pixel, TikTok Pixel. Sự kiện chuyển đổi (Lead) gửi tự động khi khách điền form. Favicon, og:image, canonical, `sitemap.xml`, `robots.txt`. Chèn mã tùy chỉnh vào `<head>`/`<body>` (gói Pro trở lên) |
 | API công khai | REST API `/api/v1` cho Zapier/Make/CRM bằng API key của workspace: đọc website, trang, lead; cập nhật trạng thái lead; xuất bản trang. Key chỉ lưu mã băm, thu hồi được, giới hạn 120 yêu cầu/phút (gói Pro trở lên) |
-| Thông báo lead | Email (chủ sở hữu, quản trị viên và tối đa 5 địa chỉ khác), webhook có ký HMAC (Zapier/Make/n8n/CRM, chặn gửi tới địa chỉ nội bộ để chống SSRF), Telegram bot, Slack, Discord, Google Sheets (qua Apps Script). Các kênh gửi song song, nút gửi thông báo thử báo kết quả từng kênh. Xem [Kênh thông báo lead](#kênh-thông-báo-lead) |
+| Thông báo lead | Email (chủ sở hữu, quản trị viên và tối đa 5 địa chỉ khác), webhook có ký HMAC (Zapier/Make/n8n/CRM, chặn gửi tới địa chỉ nội bộ để chống SSRF), Telegram bot, Slack, Discord, Google Sheets (qua Apps Script), Zalo OA (tin nhắn tư vấn tới tối đa 5 người nhận). Các kênh gửi song song, nút gửi thông báo thử báo kết quả từng kênh. Xem [Kênh thông báo lead](#kênh-thông-báo-lead) |
 | Thư viện ảnh | Tải ảnh PNG/JPEG/GIF/WEBP vào editor. Kiểm tra định dạng bằng nội dung file. Dung lượng theo gói: 50 MB / 2 GB / 10 GB |
 | Lịch sử phiên bản | Tự lưu một phiên bản mỗi lần xuất bản (giữ 20 bản gần nhất), khôi phục về bản nháp. Có nhân bản trang |
 | Tài khoản | Quên/đặt lại mật khẩu qua email, mời thành viên qua email, đổi mật khẩu, giới hạn số lần đăng nhập sai |
@@ -73,7 +73,7 @@ docker compose up -d --build
 
 ## Kênh thông báo lead
 
-Cấu hình trong **Cài đặt website → Thông báo khi có lead mới**. URL của Slack, Discord và Google Sheets được coi là bí mật: sau khi lưu sẽ không hiển thị lại. Để trống ô khi lưu thì giữ nguyên giá trị cũ, nhập `-` để xóa. Bấm **Gửi thông báo thử** để kiểm tra, kết quả hiện theo từng kênh (vd `Slack: ✓ · Google Sheets: ✓`).
+Cấu hình trong **Cài đặt website → Thông báo khi có lead mới**. URL của Slack, Discord, Google Sheets và refresh token Zalo OA được coi là bí mật: sau khi lưu sẽ không hiển thị lại. Để trống ô khi lưu thì giữ nguyên giá trị cũ, nhập `-` để xóa. Bấm **Gửi thông báo thử** để kiểm tra, kết quả hiện theo từng kênh (vd `Slack: ✓ · Google Sheets: ✓`).
 
 - **Slack:** Slack → *Apps* → *Incoming Webhooks* → *Add to Slack*, chọn kênh rồi dán URL `https://hooks.slack.com/services/…`. Tin nhắn dùng định dạng mrkdwn, liệt kê các trường của lead và kèm link mở dashboard.
 - **Discord:** *Cài đặt kênh* → *Tích hợp* → *Webhook* → *Webhook mới* → *Sao chép URL webhook* (`https://discord.com/api/webhooks/…`). Nội dung tối đa 2000 ký tự (phần dài hơn bị cắt), không ping @everyone.
@@ -104,6 +104,32 @@ function doPost(e) {
 ```
 
 > Apps Script trả về mã 302 (chuyển hướng tới kết quả). Hệ thống coi 2xx/3xx là gửi thành công và không theo chuyển hướng. Mỗi lần sửa mã cần *Quản lý triển khai* → tạo phiên bản mới để thay đổi có hiệu lực.
+
+### Zalo OA
+
+Mỗi lead mới (không phải spam, không trùng) được gửi thành tin nhắn tư vấn dạng văn bản từ Zalo Official Account của khách hàng tới tối đa 5 người nhận (vd nhân viên sale): tên website, trang, họ tên / SĐT / email, các trường khác (rút gọn), nguồn UTM và link mở dashboard. Lỗi gửi Zalo chỉ được ghi log, không ảnh hưởng việc nhận lead. Có ở mọi gói, giống các kênh thông báo khác.
+
+**1. Nền tảng (làm một lần):** tạo ứng dụng tại [developers.zalo.me](https://developers.zalo.me) → lấy *App ID* và *Khóa bí mật* (secret key), đặt vào `ZALO_APP_ID`, `ZALO_APP_SECRET`. Trong phần *Official Account* của ứng dụng, khai báo *Callback URL* dùng cho bước cấp quyền OA và bật quyền gửi tin nhắn của OA. Khi chưa cấu hình hai biến này, ô Zalo vẫn lưu được nhưng không gửi và nút *Gửi thử Zalo* bị khóa.
+
+**2. Cấp quyền OA, lấy refresh token (mỗi website):** quản trị viên OA mở link cấp quyền OAuth v4 của ứng dụng nền tảng:
+
+```
+https://oauth.zaloapp.com/v4/oa/permission?app_id=<ZALO_APP_ID>&redirect_uri=<CALLBACK_URL>&code_challenge=<CODE_CHALLENGE>&state=<STATE>
+```
+
+đăng nhập, chọn OA và đồng ý. Zalo chuyển hướng về Callback URL kèm `code` (hiệu lực ngắn). Đổi `code` lấy token:
+
+```bash
+curl -X POST https://oauth.zaloapp.com/v4/oa/access_token \
+  -H "secret_key: $ZALO_APP_SECRET" \
+  -d code=<CODE> -d app_id=$ZALO_APP_ID -d grant_type=authorization_code -d code_verifier=<CODE_VERIFIER>
+```
+
+(`code_challenge` = Base64URL(SHA-256(`code_verifier`)), PKCE.) Dán `refresh_token` trong kết quả vào ô **Zalo OA refresh token**. Nếu người quản lý ứng dụng cũng là quản trị viên OA, có thể lấy nhanh access/refresh token bằng *API Explorer* của Zalo for Developers.
+
+Access token sống khoảng 25 giờ; refresh token khoảng 3 tháng và chỉ dùng được một lần. Hệ thống tự làm mới access token khi hết hạn hoặc khi Zalo báo token không hợp lệ (làm mới một lần rồi gửi lại một lần), lưu refresh token mới ở máy chủ (bảng `zalo_tokens`, không bao giờ trả về trình duyệt). Dán token mới (sau khi cấp quyền lại) sẽ thay thế chuỗi token cũ; nhập `-` để xóa. Nếu *Gửi thử Zalo* báo *không làm mới được access token*, hãy cấp quyền lại và dán refresh token mới.
+
+**3. Người nhận:** mỗi người nhận bấm *Quan tâm* OA trên Zalo và nhắn cho OA một tin. *User ID* là dãy số riêng theo từng OA (cùng một người có ID khác nhau ở các OA khác nhau), lấy từ webhook sự kiện của OA (`sender.id`) hoặc API danh sách người quan tâm (`/v3.0/oa/user/getlist`). Nhập tối đa 5 ID, cách nhau bởi dấu phẩy. Zalo chỉ cho gửi tin tư vấn tới người đã tương tác với OA trong khoảng thời gian chính sách hiện hành cho phép; nếu người nhận bị báo lỗi, họ chỉ cần nhắn lại cho OA.
 
 ## Lưu trữ ảnh
 
@@ -229,7 +255,8 @@ src/
   routes/abtests.js  A/B testing (chia lưu lượng, thống kê, chọn phiên bản thắng)
   http.js, usage.js  Tiện ích dùng chung (bọc handler, đếm mức sử dụng)
   siteSettings.js    Cài đặt tích hợp marketing và thông báo theo từng website
-  notify.js          Gửi thông báo lead (email / webhook / Telegram / Slack / Discord / Google Sheets)
+  notify.js          Gửi thông báo lead (email / webhook / Telegram / Slack / Discord / Google Sheets / Zalo OA)
+  zalo.js            Zalo OA: gửi tin tư vấn, tự làm mới và xoay vòng token
   domains.js         Xác minh tên miền riêng bằng DNS
   jobs.js            Nhắc gia hạn, dọn session và token hết hạn
   mailer.js          Gửi email qua SMTP
@@ -269,6 +296,7 @@ test/                Test API bằng node:test
 | POST | `/api/pages/:id/publish`, `/unpublish` | Xuất bản |
 | GET / PATCH | `/api/sites/:id/leads[?status=&q=&from=&to=&format=csv]`, `/api/leads/:id` | Lead: lọc (mặc định ẩn `spam`), xuất CSV, cập nhật trạng thái và ghi chú |
 | PATCH | `/api/sites/:id/settings` | Tích hợp marketing và thông báo |
+| POST | `/api/sites/:id/notify-test` | Gửi thông báo thử trên mọi kênh, hoặc một kênh `{channel: "zalo"}`; trả kết quả theo kênh |
 | POST | `/api/sites/:id/verify-domain` | Xác minh tên miền riêng |
 | GET/POST/DELETE | `/api/workspaces/:id/assets`, `/api/assets/:id` | Thư viện ảnh (body là ảnh thô, `Content-Type: image/*`) |
 | GET/POST | `/api/pages/:id/versions[/:vid/restore]`, `/api/pages/:id/duplicate` | Lịch sử phiên bản, nhân bản trang |
@@ -399,7 +427,6 @@ Giao diện: `/app/admin` → tab **An toàn nội dung** (trang bị gắn cờ
 
 - Xuất hóa đơn VAT điện tử sau khi thanh toán.
 - Lưu ảnh lên S3-compatible storage (hiện lưu trên đĩa, trong volume `/data`).
-- Gửi thông báo lead qua Zalo OA.
 - Chuyển sang PostgreSQL khi mở rộng nhiều instance.
 
 ## Giấy phép mã nguồn bên thứ ba

@@ -214,6 +214,17 @@ CREATE TABLE IF NOT EXISTS coupons (
   CHECK ((percent_off IS NULL) <> (amount_off_vnd IS NULL))
 );
 
+-- Zalo OA token pair per site (rotates on every refresh; never sent to clients).
+-- seed_hash = sha256 of the refresh token saved in site settings that started the chain.
+CREATE TABLE IF NOT EXISTS zalo_tokens (
+  site_id INTEGER PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE,
+  seed_hash TEXT NOT NULL,
+  refresh_token TEXT NOT NULL,
+  access_token TEXT,
+  expires_at INTEGER,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_ab_page ON ab_tests(page_id, status);
 CREATE INDEX IF NOT EXISTS idx_assets_workspace ON assets(workspace_id, id);
 CREATE INDEX IF NOT EXISTS idx_versions_page ON page_versions(page_id, id);

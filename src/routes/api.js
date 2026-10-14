@@ -445,7 +445,8 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
     const domain = site.custom_domain
       ? { name: site.custom_domain, verified: !!site.domain_verified_at, ...domains.instructions(site) }
       : null;
-    return { ...rest, role, settings, domain };
+    // Channels that need platform credentials report whether they are usable.
+    return { ...rest, role, settings, domain, integrations: { zalo: notifier.zalo.enabled() } };
   }
 
   r.get('/sites/:sid', h((req) => {
@@ -455,8 +456,10 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
 
   r.patch('/sites/:sid/settings', h((req) => {
     const { site, role } = access.site(req.user, req.params.sid, 'admin');
-    const next = siteSettings.applyUpdate(siteSettings.parse(site), req.body || {}, workspacePlanById(db, site.workspace_id));
+    const current = siteSettings.parse(site);
+    const next = siteSettings.applyUpdate(current, req.body || {}, workspacePlanById(db, site.workspace_id));
     db.prepare('UPDATE sites SET settings_json = ? WHERE id = ?').run(JSON.stringify(next), site.id);
+    if (current.zaloRefreshToken && !next.zaloRefreshToken) notifier.zalo.forget(site.id);
     return siteView(db.prepare('SELECT * FROM sites WHERE id = ?').get(site.id), role);
   }));
 
@@ -473,7 +476,14 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
 
   r.post('/sites/:sid/notify-test', ha(async (req) => {
     const { site } = access.site(req.user, req.params.sid, 'admin');
-    return notifier.leadCreated({ site, pageSlug: 'index', data: { name: 'Khách hàng thử nghiệm', phone: '0900000000', message: 'Đây là thông báo thử từ HiTechCloud' } });
+    // Optional { channel: 'zalo' } tests a single channel.
+    const channel = req.body && typeof req.body.channel === 'string' ? req.body.channel : undefined;
+    return notifier.leadCreated({
+      site,
+      pageSlug: 'index',
+      data: { name: 'Khách hàng thử nghiệm', phone: '0900000000', message: 'Đây là thông báo thử từ HiTechCloud' },
+      only: channel,
+    });
   }));
 
   r.patch('/sites/:sid', h((req) => {
