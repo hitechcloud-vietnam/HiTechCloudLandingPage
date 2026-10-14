@@ -93,13 +93,20 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
     const inviteToken = typeof req.body.inviteToken === 'string' ? req.body.inviteToken : '';
     if (!EMAIL_RE.test(email)) throw new HttpError(400, 'Email không hợp lệ');
     if (password.length < 8 || password.length > 200) throw new HttpError(400, 'Mật khẩu cần ít nhất 8 ký tự');
+    const accepted = [true, 'true', '1', 'on'].includes(req.body.acceptTerms);
+    if (!accepted && config.requireTermsConsent !== false) {
+      throw new HttpError(400, 'Vui lòng đồng ý với Điều khoản sử dụng và Chính sách bảo mật');
+    }
 
     let userId;
     try {
       userId = transaction(db, () => {
         const u = db
-          .prepare('INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)')
-          .run(email, name, hashPassword(password));
+          .prepare(
+            `INSERT INTO users (email, name, password_hash, terms_accepted_at, terms_version)
+             VALUES (?, ?, ?, CASE WHEN ? THEN datetime('now') END, ?)`
+          )
+          .run(email, name, hashPassword(password), accepted ? 1 : 0, accepted ? String(config.termsVersion || '1') : null);
         const id = Number(u.lastInsertRowid);
         // Invited users join the inviter's workspace instead of getting their own.
         if (!inviteToken) {

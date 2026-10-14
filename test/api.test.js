@@ -18,6 +18,7 @@ async function startServer() {
     sessionDays: 1,
     secureCookies: false,
     quietMail: true,
+    requireTermsConsent: false,
   };
   const server = createApp({ db, config }).listen(0);
   await new Promise((r) => server.once('listening', r));

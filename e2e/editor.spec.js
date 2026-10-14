@@ -74,7 +74,7 @@ test.describe('Trình thiết kế', () => {
 
   test('chưa xác minh email thì không xuất bản được', async ({ page }) => {
     const email = uniqueEmail('unverified');
-    const signup = await page.request.post('/api/auth/signup', { data: { name: 'Chưa Xác Minh', email, password: PASSWORD } });
+    const signup = await page.request.post('/api/auth/signup', { data: { name: 'Chưa Xác Minh', email, password: PASSWORD, acceptTerms: true } });
     expect(signup.status()).toBe(201);
     await page.goto('/app/');
     await expect(page.locator('#verify-banner')).toBeVisible();

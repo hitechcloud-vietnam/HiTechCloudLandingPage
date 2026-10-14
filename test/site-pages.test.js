@@ -67,8 +67,8 @@ test('marketing site and legal pages', async (t) => {
     assert.ok(checkbox, 'consent checkbox present');
     assert.match(checkbox[0], /type="checkbox"/);
     assert.match(checkbox[0], /\brequired\b/);
-    // Not part of the form data sent to the API (contract unchanged).
-    assert.doesNotMatch(checkbox[0], /\bname=/);
+    // Sent to the API as acceptTerms, which the server requires and records.
+    assert.match(checkbox[0], /\bname="acceptTerms"/);
     const label = text.match(/<label class="consent"[\s\S]*?<\/label>/)[0];
     assert.match(label, /Tôi đồng ý với/);
     assert.match(label, /href="\/terms"[^>]*>Điều khoản sử dụng</);

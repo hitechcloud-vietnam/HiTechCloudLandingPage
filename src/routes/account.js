@@ -99,7 +99,7 @@ function parseJson(value) {
 // includes password hashes, session/reset/verification tokens, domain tokens,
 // integration secrets or other members' details.
 function exportUserData(db, userId) {
-  const user = db.prepare('SELECT id, email, name, created_at, email_verified_at FROM users WHERE id = ?').get(userId);
+  const user = db.prepare('SELECT id, email, name, created_at, email_verified_at, terms_accepted_at, terms_version FROM users WHERE id = ?').get(userId);
   const memberships = db
     .prepare(
       `SELECT w.id AS workspaceId, w.name AS workspaceName, m.role FROM memberships m

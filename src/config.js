@@ -32,6 +32,9 @@ const config = {
   superAdmins: list(process.env.SUPERADMIN_EMAILS),
   // Auto-suspend sites whose published page looks like bank phishing (0 = flag for review only).
   safetyAutoSuspend: !['0', 'false', 'no', 'off'].includes(String(process.env.SAFETY_AUTO_SUSPEND ?? '1').trim().toLowerCase()),
+  // Signup must tick "Tôi đồng ý…"; the accepted terms version is stored as proof of consent (Decree 13/2023).
+  requireTermsConsent: !['0', 'false', 'no', 'off'].includes(String(process.env.REQUIRE_TERMS_CONSENT ?? '1').trim().toLowerCase()),
+  termsVersion: process.env.TERMS_VERSION || '1',
   sessionDays: Number(process.env.SESSION_DAYS || 30),
   secureCookies: process.env.NODE_ENV === 'production',
   // smtp(s)://user:pass@host:port — leave empty to log emails to stdout.

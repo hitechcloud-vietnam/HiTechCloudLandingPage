@@ -19,6 +19,7 @@ function testConfig(overrides = {}) {
     secureCookies: false,
     mailFrom: 'test@hitechcloud.vn',
     quietMail: true,
+    requireTermsConsent: false,
     uploadsDir: fs.mkdtempSync(path.join(os.tmpdir(), 'htc-uploads-')),
     ...overrides,
   };

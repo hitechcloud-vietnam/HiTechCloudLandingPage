@@ -286,3 +286,25 @@ test('ownership transfer and account deletion', async (t) => {
     assert.equal((await client(base)('POST', '/api/auth/login', { email: 'owner@example.com', password: 'matkhau123' })).status, 401);
   });
 });
+
+test('signup requires consent to the terms and records which version was accepted', async (t) => {
+  const { server, base, db } = await startServer({ requireTermsConsent: true, termsVersion: '2026-10' });
+  t.after(() => server.close());
+  const c = client(base);
+  const body = { name: 'Đồng Ý', email: 'dongy@example.com', password: 'matkhau123' };
+
+  for (const acceptTerms of [undefined, false, '0', 'yes']) {
+    const r = await c('POST', '/api/auth/signup', { ...body, acceptTerms });
+    assert.equal(r.status, 400);
+    assert.match(r.data.error, /Điều khoản sử dụng/);
+  }
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM users').get().n, 0);
+
+  // The signup form posts the checkbox as "1".
+  assert.equal((await c('POST', '/api/auth/signup', { ...body, acceptTerms: '1' })).status, 201);
+  const row = db.prepare('SELECT terms_accepted_at, terms_version FROM users WHERE email = ?').get('dongy@example.com');
+  assert.ok(row.terms_accepted_at);
+  assert.equal(row.terms_version, '2026-10');
+  const exported = (await c('GET', '/api/auth/export')).data;
+  assert.equal(exported.user.terms_version, '2026-10');
+});

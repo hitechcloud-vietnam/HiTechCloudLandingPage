@@ -267,6 +267,8 @@ function migrate(db) {
   add('sites', 'suspended_at', 'TEXT');
   add('sites', 'suspended_reason', 'TEXT');
   add('users', 'suspended_at', 'TEXT');
+  add('users', 'terms_accepted_at', 'TEXT');
+  add('users', 'terms_version', 'TEXT');
   add('users', 'suspended_reason', 'TEXT');
 }
 

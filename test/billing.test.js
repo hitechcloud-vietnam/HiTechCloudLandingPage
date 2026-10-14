@@ -91,7 +91,7 @@ test('billing with payOS and Pay2S', async (t) => {
   const gw = createGatewayMock();
   const db = openDb(':memory:');
   const config = {
-    appUrl: APP_URL, publishRootDomain: '', superAdmins: ['root@hitechcloud.vn'], sessionDays: 1, secureCookies: false, quietMail: true,
+    appUrl: APP_URL, publishRootDomain: '', superAdmins: ['root@hitechcloud.vn'], sessionDays: 1, secureCookies: false, quietMail: true, requireTermsConsent: false,
     payments: { payos: PAYOS, pay2s: PAY2S }, fetch: gw.fetch,
   };
   const server = createApp({ db, config }).listen(0);

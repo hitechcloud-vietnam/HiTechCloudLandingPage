@@ -334,7 +334,7 @@ Cổng thanh toán (payOS, Pay2S) yêu cầu website có đủ thông tin doanh 
 | `/contact` | Thông tin liên hệ và thông tin doanh nghiệp |
 | `/404.html` | Trang lỗi 404. Server trả trang này cho mọi yêu cầu GET trình duyệt không khớp đường dẫn nào trên tên miền dashboard |
 
-Trang đăng ký có ô bắt buộc "Tôi đồng ý với Điều khoản sử dụng và Chính sách bảo mật". Ô này chỉ được kiểm tra ở trình duyệt, API đăng ký không thay đổi.
+Trang đăng ký có ô bắt buộc "Tôi đồng ý với Điều khoản sử dụng và Chính sách bảo mật". API `POST /api/auth/signup` cũng yêu cầu `acceptTerms` (tắt bằng `REQUIRE_TERMS_CONSENT=0`). Thời điểm đồng ý và phiên bản điều khoản (`TERMS_VERSION`) được lưu ở `users.terms_accepted_at` / `users.terms_version` làm bằng chứng đồng ý và có trong tệp "Tải dữ liệu của tôi". Tăng `TERMS_VERSION` mỗi khi sửa `/terms` hoặc `/privacy`.
 
 > ⚠️ Các trang pháp lý là **bản mẫu** và đều có dòng thông báo "Bản mẫu — cần được luật sư rà soát trước khi công bố". Khi luật sư đã duyệt, xóa khối `<div class="legal-notice">` trong từng trang. Luật sư cũng cần đối chiếu với Luật Bảo vệ dữ liệu cá nhân và các văn bản hướng dẫn đang có hiệu lực.
 
@@ -398,7 +398,6 @@ Giao diện: `/app/admin` → tab **An toàn nội dung** (trang bị gắn cờ
 ## Lộ trình tiếp theo
 
 - Xuất hóa đơn VAT điện tử sau khi thanh toán.
-- Lưu ảnh lên S3-compatible storage (hiện lưu trên đĩa, trong volume `/data`).
 - Gửi thông báo lead qua Zalo OA.
 - Chuyển sang PostgreSQL khi mở rộng nhiều instance.
 

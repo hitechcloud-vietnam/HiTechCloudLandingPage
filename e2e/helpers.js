@@ -62,7 +62,7 @@ async function mailLink(email, pathRe) {
 // Signs up through the JSON API (sharing cookies with `page`), then follows the
 // verification link from the logged email. Leaves the browser on the dashboard.
 async function signupAndVerify(page, { email = uniqueEmail(), name = 'Người Dùng E2E', workspaceName = 'Workspace E2E' } = {}) {
-  const res = await page.request.post('/api/auth/signup', { data: { name, email, password: PASSWORD, workspaceName } });
+  const res = await page.request.post('/api/auth/signup', { data: { name, email, password: PASSWORD, workspaceName, acceptTerms: true } });
   expect(res.status(), await res.text()).toBe(201);
   await page.goto(await mailLink(email, /\/api\/auth\/verify\?token=/));
   await expect(page).toHaveURL(/\/app\/$/);
@@ -74,7 +74,7 @@ async function signupAndVerify(page, { email = uniqueEmail(), name = 'Người D
 async function loginAsAdmin(page) {
   let res = await page.request.post('/api/auth/login', { data: { email: ADMIN_EMAIL, password: PASSWORD } });
   if (res.status() === 401) {
-    res = await page.request.post('/api/auth/signup', { data: { name: 'Root', email: ADMIN_EMAIL, password: PASSWORD, workspaceName: 'Platform' } });
+    res = await page.request.post('/api/auth/signup', { data: { name: 'Root', email: ADMIN_EMAIL, password: PASSWORD, workspaceName: 'Platform', acceptTerms: true } });
     if (res.status() === 409) res = await page.request.post('/api/auth/login', { data: { email: ADMIN_EMAIL, password: PASSWORD } });
   }
   expect(res.ok(), await res.text()).toBeTruthy();

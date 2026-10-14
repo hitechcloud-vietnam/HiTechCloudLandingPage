@@ -55,7 +55,7 @@ test.describe('Tài khoản', () => {
 
   test('quên mật khẩu gửi email và đặt lại được mật khẩu @mobile', async ({ page }) => {
     const email = uniqueEmail('forgot');
-    const signup = await page.request.post('/api/auth/signup', { data: { name: 'Quên Mật Khẩu', email, password: PASSWORD } });
+    const signup = await page.request.post('/api/auth/signup', { data: { name: 'Quên Mật Khẩu', email, password: PASSWORD, acceptTerms: true } });
     expect(signup.status()).toBe(201);
     await page.context().clearCookies();
 
