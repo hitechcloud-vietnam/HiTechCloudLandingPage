@@ -9,7 +9,8 @@ Lõi trình thiết kế dùng [GrapesJS](https://github.com/GrapesJS/grapesjs).
 | Nhóm | Chi tiết |
 |---|---|
 | Trình thiết kế | Kéo thả trên GrapesJS, xem trước theo máy tính / tablet / điện thoại, tự động lưu, phím tắt Ctrl+S. Có 14 section dựng sẵn: Hero, Tính năng, Con số, Quy trình, Bảng giá, Đánh giá, FAQ, Video YouTube, Đếm ngược ưu đãi, Form thu lead, CTA, nút gọi/Zalo/Messenger nổi… |
-| Mẫu khởi đầu | 9 mẫu theo ngành, mỗi mẫu có bảng màu riêng: Trang trắng, Sản phẩm SaaS, Thu lead nhanh, Sự kiện/Webinar, Spa/Thẩm mỹ, Bất động sản, Khóa học, Nhà hàng/F&B, Bán sản phẩm (COD) |
+| Tiện ích chuyển đổi | 3 block kéo thả, chỉnh trong tab Cài đặt (⚙) của editor: **Popup thu lead** (hiện khi khách định rời trang, sau N giây hoặc khi cuộn tới N% trang; trên điện thoại "rời trang" chuyển thành hẹn giờ; tần suất mỗi phiên / mỗi ngày / mỗi lần tải; có Esc, khóa cuộn nền, giữ focus trong hộp thoại), **Thanh thông báo cố định** (đầu hoặc cuối màn hình, có nút đóng), **Thông báo khách vừa đăng ký** (xoay vòng danh sách, tôn trọng chế độ giảm chuyển động). Form trong popup tự gửi lead như mọi form khác. Script chỉ được chèn khi trang có tiện ích tương ứng |
+| Mẫu khởi đầu | 9 mẫu theo ngành, mỗi mẫu có bảng màu riêng: Trang trắng, Sản phẩm SaaS, Thu lead nhanh (có thanh thông báo), Sự kiện/Webinar, Spa/Thẩm mỹ, Bất động sản, Khóa học, Nhà hàng/F&B, Bán sản phẩm (COD, có popup khi rời trang) |
 | Xuất bản | Tách bản nháp và bản đã xuất bản, gỡ xuất bản, xem trước bản nháp, cài SEO (title, meta description, OG) |
 | Tên miền | `/p/<subdomain>`, `<subdomain>.<PUBLISH_ROOT_DOMAIN>`, tên miền riêng (gói Pro trở lên) |
 | Thu lead & CRM | Mọi `<form>` trên trang đã xuất bản tự gửi về hệ thống. Tự ghi nhận nguồn khách (UTM, referrer). Có trạng thái (Mới → Đã liên hệ → Tiềm năng → Thành công/Thất bại), ghi chú, bộ lọc theo trạng thái / từ khóa / ngày. Chống spam (honeypot + giới hạn tần suất). Xuất CSV theo bộ lọc (chống CSV injection) |

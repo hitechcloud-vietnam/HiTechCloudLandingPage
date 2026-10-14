@@ -30,6 +30,179 @@ const COUNTDOWN_JS = `<script>(function(){var els=document.querySelectorAll('[da
 // hidden fields, which the lead endpoint stores separately from the form data.
 const ATTRIBUTION_JS = `<script>(function(){var q=new URLSearchParams(location.search),f={};['utm_source','utm_medium','utm_campaign','utm_term','utm_content'].forEach(function(k){if(q.get(k))f['_'+k]=q.get(k)});if(document.referrer)f._ref=document.referrer;document.addEventListener('submit',function(e){var form=e.target;Object.keys(f).forEach(function(k){if(form.querySelector('input[name="'+k+'"]'))return;var i=document.createElement('input');i.type='hidden';i.name=k;i.value=f[k];form.appendChild(i)})},true)})();</script>`;
 
+// ---------- Conversion widget runtimes (ES5, no dependencies) ----------
+// Written as functions for readability and serialised into the page. Pages
+// served from the dashboard origin run in an opaque-origin sandbox where Web
+// Storage throws, so htcStore falls back to an in-memory map.
+function storeRuntime() {
+  var mem = {};
+  function area(session) {
+    try { return session ? window.sessionStorage : window.localStorage; } catch (e) { return null; }
+  }
+  window.htcStore = {
+    get: function (k, session) {
+      try { var a = area(session); if (a) return a.getItem(k); } catch (e) {}
+      return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null;
+    },
+    set: function (k, v, session) {
+      mem[k] = String(v);
+      try { var a = area(session); if (a) a.setItem(k, String(v)); } catch (e) {}
+    }
+  };
+}
+
+// Popup: data-htc-popup="exit|delay|scroll", data-htc-delay (s), data-htc-scroll (%),
+// data-htc-frequency="session|always|once-per-day".
+function popupRuntime() {
+  var store = window.htcStore, root = document.documentElement;
+  var FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),[tabindex]';
+  var current = null, lastFocus = null;
+  var skip = /[?&]submitted=1(&|$)/.test(location.search);
+  function num(el, name, def) { var n = parseFloat(el.getAttribute(name)); return isNaN(n) || n < 0 ? def : n; }
+  function box(el) { return el.querySelector('[role=dialog]') || el; }
+  function focusables(el) {
+    return Array.prototype.filter.call(el.querySelectorAll(FOCUSABLE), function (n) { return n.tabIndex >= 0 && n.offsetWidth + n.offsetHeight > 0; });
+  }
+  function show(el) {
+    if (current) return false;
+    current = el;
+    lastFocus = document.activeElement;
+    el.classList.add('htc-open');
+    root.classList.add('htc-locked');
+    box(el).focus();
+    return true;
+  }
+  function hide() {
+    if (!current) return;
+    current.classList.remove('htc-open');
+    root.classList.remove('htc-locked');
+    current = null;
+    if (lastFocus && lastFocus.focus) try { lastFocus.focus(); } catch (e) {}
+  }
+  document.addEventListener('keydown', function (e) {
+    if (!current) return;
+    if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); hide(); return; }
+    if (e.key !== 'Tab') return;
+    var f = focusables(current), first = f[0], last = f[f.length - 1];
+    if (!f.length) { e.preventDefault(); return; }
+    if (e.shiftKey && (document.activeElement === first || !current.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && (document.activeElement === last || !current.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-htc-popup]'), function (el, i) {
+    var dlg = box(el), h = dlg.querySelector('h1,h2,h3');
+    if (h) { h.id = h.id || 'htc-popup-title-' + i; dlg.setAttribute('aria-labelledby', h.id); }
+    el.addEventListener('click', function (e) {
+      if (e.target === el || (e.target.closest && e.target.closest('[data-htc-close]'))) hide();
+    });
+    var key = 'htc-popup:' + location.pathname + ':' + i;
+    var freq = el.getAttribute('data-htc-frequency') || 'session';
+    var day = freq === 'once-per-day';
+    if (skip || (freq !== 'always' && store.get(key, !day) && (!day || Date.now() - Number(store.get(key)) < 864e5))) return;
+    var done = false;
+    function fire() {
+      if (done || !show(el)) return;
+      done = true;
+      if (freq !== 'always') store.set(key, day ? Date.now() : '1', !day);
+    }
+    var mode = el.getAttribute('data-htc-popup');
+    var desktop = window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches;
+    if (mode === 'exit' && desktop) {
+      document.addEventListener('mouseout', function (e) { if (!e.relatedTarget && e.clientY <= 0) fire(); });
+    } else if (mode === 'scroll') {
+      var onScroll = function () {
+        var max = root.scrollHeight - window.innerHeight;
+        if (max <= 0 || window.pageYOffset / max * 100 >= num(el, 'data-htc-scroll', 50)) { window.removeEventListener('scroll', onScroll); fire(); }
+      };
+      window.addEventListener('scroll', onScroll, { passive: true });
+      setTimeout(onScroll, 500);
+    } else {
+      setTimeout(fire, num(el, 'data-htc-delay', 8) * 1000);
+    }
+  });
+}
+
+// Sticky bar: data-htc-sticky="top|bottom"; dismissal remembered for the session.
+function stickyRuntime() {
+  var store = window.htcStore, root = document.documentElement;
+  Array.prototype.forEach.call(document.querySelectorAll('[data-htc-sticky]'), function (el, i) {
+    var key = 'htc-sticky:' + location.pathname + ':' + i;
+    var top = el.getAttribute('data-htc-sticky') === 'top';
+    function pad() {
+      var h = el.classList.contains('htc-hidden') ? 0 : el.offsetHeight;
+      document.body.style[top ? 'paddingTop' : 'paddingBottom'] = h ? h + 'px' : '';
+      if (!top) {
+        root.style.setProperty('--htc-sb-h', h + 'px');
+        root.classList[h ? 'add' : 'remove']('htc-has-sb-bottom');
+      }
+    }
+    if (store.get(key, true)) el.classList.add('htc-hidden');
+    pad();
+    window.addEventListener('resize', pad);
+    el.addEventListener('click', function (e) {
+      if (!(e.target.closest && e.target.closest('[data-htc-close]'))) return;
+      el.classList.add('htc-hidden');
+      store.set(key, '1', true);
+      pad();
+    });
+  });
+}
+
+// Social-proof toast: data-htc-items (JSON array or "a|b|c"), data-htc-interval (s).
+function proofRuntime() {
+  var store = window.htcStore;
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function parse(raw) {
+    raw = String(raw || '').trim();
+    var list;
+    if (raw.charAt(0) === '[') try { list = JSON.parse(raw); } catch (e) {}
+    if (!list || !list.length) list = raw.split(/\s*[|\n]\s*/);
+    return list.map(function (it) {
+      return typeof it === 'string' ? it : it && (it.text || [it.name, it.city ? 'ở ' + it.city : '', it.action || 'vừa đăng ký'].join(' ').replace(/\s+/g, ' '));
+    }).filter(function (s) { return s && String(s).trim(); });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('[data-htc-proof]'), function (el, i) {
+    var key = 'htc-proof:' + location.pathname + ':' + i;
+    var items = parse(el.getAttribute('data-htc-items'));
+    var text = el.querySelector('.htc-proof-text');
+    if (!items.length || !text || store.get(key, true)) return;
+    var every = Math.max(3, parseFloat(el.getAttribute('data-htc-interval')) || 8) * 1000;
+    var n = 0, timer, stopped = false;
+    if (document.querySelector('a[href="https://hitechcloud.vn"]') && el.getAttribute('data-htc-proof') !== 'right') el.style.marginBottom = '40px';
+    function next() {
+      if (stopped) return;
+      text.textContent = items[n++ % items.length];
+      el.classList.add('htc-show');
+      timer = setTimeout(function () {
+        el.classList.remove('htc-show');
+        timer = setTimeout(next, every);
+      }, reduce ? 7000 : 5000);
+    }
+    timer = setTimeout(next, 3000);
+    el.addEventListener('click', function (e) {
+      if (!(e.target.closest && e.target.closest('[data-htc-close]'))) return;
+      stopped = true;
+      clearTimeout(timer);
+      el.classList.remove('htc-show');
+      store.set(key, '1', true);
+    });
+  });
+}
+
+const inlineScript = (fn) => `<script>(${String(fn).replace(/\n\s+/g, '\n')})();</script>`;
+const STORE_JS = inlineScript(storeRuntime);
+const POPUP_JS = inlineScript(popupRuntime);
+const STICKY_JS = inlineScript(stickyRuntime);
+const PROOF_JS = inlineScript(proofRuntime);
+
+// Runtimes needed by the widgets present in the page body.
+function widgetScripts(body) {
+  const out = [];
+  if (body.includes('data-htc-popup')) out.push(POPUP_JS);
+  if (body.includes('data-htc-sticky')) out.push(STICKY_JS);
+  if (body.includes('data-htc-proof')) out.push(PROOF_JS);
+  return out.length ? STORE_JS + out.join('') : '';
+}
+
 const BRANDING = `<a href="https://hitechcloud.vn" target="_blank" rel="noopener" style="position:fixed;left:12px;bottom:12px;z-index:2147483647;background:#0f172a;color:#fff;font:12px/1 system-ui,sans-serif;padding:8px 12px;border-radius:999px;text-decoration:none;opacity:.85">Tạo bởi HiTechCloud</a>`;
 
 // formSlug: slug the visitor requested (an A/B variant is served at the original
@@ -63,6 +236,7 @@ ${notice ? `<div style="background:#16a34a;color:#fff;text-align:center;padding:
 ${body}
 ${showBranding ? BRANDING : ''}
 ${body.includes('data-htc-countdown') ? COUNTDOWN_JS : ''}
+${widgetScripts(body)}
 ${/<form\b/i.test(body) ? ATTRIBUTION_JS : ''}
 ${notice ? leadEvents(settings) : ''}
 ${settings.customBody || ''}
@@ -79,4 +253,4 @@ function renderMessage(title, message, status = 404) {
   };
 }
 
-module.exports = { escapeHtml, rewriteForms, renderPage, renderMessage };
+module.exports = { escapeHtml, rewriteForms, renderPage, renderMessage, widgetScripts };

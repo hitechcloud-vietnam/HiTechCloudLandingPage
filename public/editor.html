@@ -114,6 +114,31 @@
     }
   }
 
+  // Conversion widgets: component types matched by their data attributes, with
+  // traits (Settings panel) for the options read by the runtimes in render.js.
+  // Registered as a plugin so the types exist before the project loads.
+  const widgetsPlugin = (editor) => {
+    const opts = (pairs) => pairs.map(([id, name]) => ({ id, name }));
+    const widgetType = (type, attr, name, traits) => editor.DomComponents.addType(type, {
+      isComponent: (el) => el.nodeType === 1 && el.hasAttribute(attr),
+      model: { defaults: { name, traits } },
+    });
+    widgetType('htc-popup', 'data-htc-popup', 'Popup', [
+      { type: 'select', name: 'data-htc-popup', label: 'Hiện khi', options: opts([['delay', 'Sau thời gian chờ'], ['exit', 'Khách định rời trang'], ['scroll', 'Cuộn tới % trang']]) },
+      { type: 'number', name: 'data-htc-delay', label: 'Thời gian chờ (giây)', min: 0, max: 600, placeholder: '8' },
+      { type: 'number', name: 'data-htc-scroll', label: 'Cuộn tới (%)', min: 0, max: 100, placeholder: '50' },
+      { type: 'select', name: 'data-htc-frequency', label: 'Tần suất', options: opts([['session', 'Một lần mỗi phiên'], ['once-per-day', 'Một lần mỗi ngày'], ['always', 'Mỗi lần tải trang']]) },
+    ]);
+    widgetType('htc-sticky', 'data-htc-sticky', 'Thanh thông báo cố định', [
+      { type: 'select', name: 'data-htc-sticky', label: 'Vị trí', options: opts([['bottom', 'Cuối màn hình'], ['top', 'Đầu màn hình']]) },
+    ]);
+    widgetType('htc-proof', 'data-htc-proof', 'Thông báo khách vừa đăng ký', [
+      { type: 'select', name: 'data-htc-proof', label: 'Vị trí', options: opts([['left', 'Góc dưới trái'], ['right', 'Góc dưới phải']]) },
+      { type: 'text', name: 'data-htc-items', label: 'Nội dung (ngăn cách bằng |)' },
+      { type: 'number', name: 'data-htc-interval', label: 'Giãn cách (giây)', min: 3, max: 120, placeholder: '8' },
+    ]);
+  };
+
   const editor = grapesjs.init({
     container: '#gjs',
     height: '100%',
@@ -121,6 +146,19 @@
     showOffsets: true,
     cssIcons: '/vendor/font-awesome/css/font-awesome.min.css',
     canvas: { styles: [] },
+    // Editor-only: show conversion widgets in the page flow so they can be edited
+    // (on the published page they are fixed/hidden until triggered).
+    canvasCss: `
+      .htc-popup{display:flex!important;position:relative!important;inset:auto!important;z-index:auto!important;padding:44px 16px 32px!important}
+      .htc-sticky,.htc-proof{position:relative!important;inset:auto!important;z-index:auto!important}
+      .htc-sticky.htc-hidden{display:block!important}
+      .htc-proof{opacity:1!important;visibility:visible!important;transform:none!important;margin:16px!important;max-width:340px}
+      .htc-popup,.htc-sticky,.htc-proof{outline:2px dashed #f59e0b;outline-offset:-2px}
+      .htc-popup:before,.htc-sticky:before,.htc-proof:before{position:absolute;top:-1px;left:-1px;z-index:1;padding:2px 8px;border-radius:0 0 6px 0;background:#f59e0b;color:#fff;font:600 11px/1.6 system-ui,sans-serif;pointer-events:none}
+      .htc-popup:before{content:'Popup · hiện theo kích hoạt — chọn khung này rồi mở tab Cài đặt (⚙)'}
+      .htc-sticky:before{content:'Thanh thông báo cố định'}
+      .htc-proof:before{content:'Thông báo xoay vòng'}
+    `,
     assetManager: {
       assets: assetList.map((a) => ({ src: a.src, name: a.name, type: 'image' })),
       uploadFile: uploadFiles,
@@ -134,7 +172,7 @@
         { id: 'mobile', name: 'Điện thoại', width: '375px', widthMedia: '480px' },
       ],
     },
-    plugins: [plugin('gjs-blocks-basic'), plugin('grapesjs-plugin-forms')].filter(Boolean),
+    plugins: [plugin('gjs-blocks-basic'), plugin('grapesjs-plugin-forms'), widgetsPlugin].filter(Boolean),
     pluginsOpts: {},
     storageManager: {
       type: 'remote',
@@ -155,20 +193,25 @@
   });
 
   // Landing page section blocks served by the platform.
+  const WIDGET_ICON = '<svg viewBox="0 0 24 24" width="40" height="40"><rect x="2" y="3" width="20" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="6" y="8" width="12" height="8" rx="1.5" fill="currentColor" opacity=".35"/></svg>';
+  const blockCss = {};
   for (const b of blocks.blocks) {
+    if (b.css) blockCss[`htc-${b.id}`] = b.css;
     editor.BlockManager.add(`htc-${b.id}`, {
       label: b.label,
-      category: 'HiTechCloud – Section',
+      category: b.css ? 'HiTechCloud – Chuyển đổi' : 'HiTechCloud – Section',
       content: b.html,
-      media: '<svg viewBox="0 0 24 24" width="40" height="40"><rect x="2" y="5" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 9h14M5 13h9" stroke="currentColor" stroke-width="1.5"/></svg>',
+      media: b.css ? WIDGET_ICON : '<svg viewBox="0 0 24 24" width="40" height="40"><rect x="2" y="5" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 9h14M5 13h9" stroke="currentColor" stroke-width="1.5"/></svg>',
     });
   }
 
-  // Make sure the shared section styles exist when sections are dropped onto a blank page.
+  // Make sure the shared section styles exist when sections are dropped onto a blank page,
+  // and widget styles exist on pages created before the widgets were added.
   editor.on('block:drag:stop', (_component, block) => {
-    if (block && String(block.getId()).startsWith('htc-') && !editor.getCss().includes('.htc-container')) {
-      editor.addStyle(blocks.css);
-    }
+    const id = block ? String(block.getId()) : '';
+    if (!id.startsWith('htc-')) return;
+    if (!editor.getCss().includes('.htc-container')) editor.addStyle(blocks.css);
+    if (blockCss[id] && !editor.getCss().includes('.htc-popup-box')) editor.addStyle(blockCss[id]);
   });
 
   editor.on('storage:start:store', () => setStatus('Đang lưu…'));

@@ -65,6 +65,41 @@ img{max-width:100%;height:auto}
 .htc-float .htc-zalo{background:#0068ff;font-size:13px}
 .htc-float .htc-mess{background:#0084ff}
 @media (max-width:640px){.htc-hero{padding:72px 0}.htc-hero h1{font-size:34px}.htc-section{padding:56px 0}.htc-section h2{font-size:28px}.htc-nav-links{display:none}.htc-countdown div{min-width:64px}}
+${widgetCss()}
+`.trim();
+}
+
+// Conversion widgets (popup, sticky bar, social-proof toast). Colours come from
+// the .htc-btn rules above, so the widgets follow each template's palette.
+// Behaviour is driven by data-htc-* attributes and runtimes in render.js.
+function widgetCss() {
+  return `
+html.htc-locked,html.htc-locked body{overflow:hidden}
+.htc-popup{display:none;position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.6);align-items:center;justify-content:center;padding:16px}
+.htc-popup.htc-open{display:flex}
+.htc-popup-box{position:relative;width:100%;max-width:440px;max-height:calc(100vh - 32px);overflow:auto;padding:32px 24px 24px;border-radius:16px;background:#fff;color:#0f172a;text-align:center;box-shadow:0 24px 60px rgba(15,23,42,.35);outline:0}
+.htc-popup-box h2{font-size:26px;line-height:1.25;margin:0 0 8px}
+.htc-popup-box p{color:#475569;margin:0 0 20px}
+.htc-popup-box .htc-form{gap:10px}
+.htc-popup-close,.htc-sticky-close,.htc-proof-close{border:0;background:transparent;color:inherit;font:inherit;font-size:24px;line-height:1;cursor:pointer;padding:4px 8px;border-radius:6px;opacity:.7}
+.htc-popup-close{position:absolute;top:8px;right:8px}
+.htc-popup-close:hover,.htc-sticky-close:hover,.htc-proof-close:hover{opacity:1}
+.htc-sticky{position:fixed;left:0;right:0;z-index:9990;background:#0f172a;color:#fff;box-shadow:0 0 16px rgba(15,23,42,.25)}
+.htc-sticky[data-htc-sticky="top"]{top:0}
+.htc-sticky[data-htc-sticky="bottom"]{bottom:0}
+.htc-sticky.htc-hidden{display:none}
+.htc-sticky-inner{max-width:1120px;margin:0 auto;padding:10px 12px 10px 20px;display:flex;align-items:center;justify-content:center;gap:16px}
+.htc-sticky-text{font-weight:600}
+.htc-sticky .htc-btn{padding:8px 18px;font-size:15px;white-space:nowrap}
+.htc-proof{position:fixed;left:16px;bottom:calc(16px + var(--htc-sb-h,0px));z-index:9980;display:flex;align-items:center;gap:10px;max-width:min(340px,calc(100vw - 32px));padding:12px 8px 12px 14px;border-radius:12px;background:#fff;color:#0f172a;font-size:14px;box-shadow:0 10px 30px rgba(15,23,42,.18);opacity:0;visibility:hidden;transform:translateY(12px);transition:opacity .3s,transform .3s,visibility .3s}
+.htc-proof[data-htc-proof="right"]{left:auto;right:84px}
+.htc-proof.htc-show{opacity:1;visibility:visible;transform:none}
+.htc-proof-icon{font-size:20px}
+.htc-proof-text{flex:1}
+.htc-proof-close{font-size:18px}
+.htc-has-sb-bottom .htc-float{bottom:calc(16px + var(--htc-sb-h,0px))}
+@media (prefers-reduced-motion:reduce){.htc-proof{transition:none;transform:none}}
+@media (max-width:640px){.htc-sticky-inner{gap:10px;padding-left:14px;font-size:14px}.htc-sticky .htc-btn{padding:8px 12px;font-size:14px}.htc-proof[data-htc-proof="right"]{right:16px}.htc-popup-box h2{font-size:22px}}
 `.trim();
 }
 
@@ -205,6 +240,44 @@ ${items.map(([q, a]) => `    <details><summary>${e(q)}</summary><p>${e(a)}</p></
   footer: ({ text = '© 2026 Thương hiệu của bạn. Bảo lưu mọi quyền.' } = {}) =>
     `<footer class="htc-footer"><div class="htc-container">${e(text)}</div></footer>`,
 
+  // Modal shown by trigger (exit intent / delay / scroll) — see POPUP_JS in render.js.
+  popup: ({
+    title = 'Khoan đã! Nhận ưu đãi 10%',
+    text = 'Để lại số điện thoại, chúng tôi gửi mã giảm giá cho bạn ngay hôm nay.',
+    button = 'Nhận ưu đãi',
+    trigger = 'delay',
+    delay = 8,
+    scroll = 50,
+    frequency = 'session',
+  } = {}) =>
+    `<div class="htc-popup" data-htc-popup="${e(trigger)}" data-htc-delay="${e(delay)}" data-htc-scroll="${e(scroll)}" data-htc-frequency="${e(frequency)}">
+  <div class="htc-popup-box" role="dialog" aria-modal="true" aria-label="${e(title)}" tabindex="-1">
+    <button class="htc-popup-close" type="button" aria-label="Đóng" data-htc-close>×</button>
+    <h2>${e(title)}</h2>
+    <p>${e(text)}</p>
+    <form class="htc-form">
+      <input name="name" placeholder="Họ và tên" required>
+      <input name="phone" type="tel" placeholder="Số điện thoại" required>
+      <button class="htc-btn" type="submit">${e(button)}</button>
+    </form>
+  </div>
+</div>`,
+
+  stickyBar: ({ text = '🔥 Ưu đãi giảm 30% chỉ trong hôm nay', button = 'Nhận ngay', href = '#contact', position = 'bottom' } = {}) =>
+    `<div class="htc-sticky" data-htc-sticky="${e(position)}" role="region" aria-label="Thông báo ưu đãi">
+  <div class="htc-sticky-inner"><span class="htc-sticky-text">${e(text)}</span><a class="htc-btn" href="${e(href)}">${e(button)}</a><button class="htc-sticky-close" type="button" aria-label="Đóng thông báo" data-htc-close>×</button></div>
+</div>`,
+
+  // Rotating "someone just signed up" toast; items are |-separated or a JSON array.
+  socialProof: ({
+    items = ['Nguyễn A ở Hà Nội vừa đăng ký', 'Trần B ở TP.HCM vừa nhận tư vấn', 'Lê C ở Đà Nẵng vừa đặt hàng'],
+    interval = 8,
+    position = 'left',
+  } = {}) =>
+    `<div class="htc-proof" data-htc-proof="${e(position)}" data-htc-items="${e(items.join('|'))}" data-htc-interval="${e(interval)}" role="status">
+  <span class="htc-proof-icon" aria-hidden="true">✅</span><span class="htc-proof-text">${e(items[0] || '')}</span><button class="htc-proof-close" type="button" aria-label="Ẩn thông báo" data-htc-close>×</button>
+</div>`,
+
   floatingContact: ({ phone = '0900000000', zalo = '0900000000', messenger = '' } = {}) =>
     `<div class="htc-float">
   ${messenger ? `<a class="htc-mess" href="https://m.me/${e(messenger)}" target="_blank" rel="noopener" title="Messenger">💬</a>` : ''}
@@ -227,8 +300,15 @@ const BLOCKS = [
   ['leadForm', 'Form thu lead'],
   ['cta', 'Kêu gọi hành động'],
   ['floatingContact', 'Nút gọi / Zalo nổi'],
+  ['popup', 'Popup thu lead'],
+  ['stickyBar', 'Thanh thông báo cố định'],
+  ['socialProof', 'Thông báo khách vừa đăng ký'],
   ['footer', 'Chân trang'],
 ];
+
+// Widgets carry their own CSS so they are styled even when dropped onto pages
+// whose stylesheet predates them (the editor adds it once if missing).
+const WIDGET_BLOCKS = new Set(['popup', 'stickyBar', 'socialProof']);
 
 const sel = (label, name, options) =>
   `<select name="${name}" required><option value="">${e(label)}</option>${options.map((o) => `<option>${e(o)}</option>`).join('')}</select>`;
@@ -245,7 +325,7 @@ const TEMPLATES = {
   leadgen: {
     name: 'Thu lead nhanh',
     description: 'Trang ngắn gọn tập trung vào biểu mẫu đăng ký',
-    build: () => [S.hero({ cta2: '' }), S.features(), S.leadForm(), S.footer(), S.floatingContact()],
+    build: () => [S.stickyBar({ text: '🎁 Đăng ký hôm nay nhận tư vấn miễn phí 1:1', button: 'Đăng ký ngay', position: 'top' }), S.hero({ cta2: '' }), S.features(), S.leadForm(), S.footer(), S.floatingContact()],
   },
 
   event: {
@@ -340,6 +420,7 @@ const TEMPLATES = {
       S.leadForm({ title: 'Đặt hàng — thanh toán khi nhận', lead: 'Nhân viên gọi xác nhận đơn trong 30 phút.', extra: '<input name="address" placeholder="Địa chỉ nhận hàng" required>\n    ' + sel('Số lượng', 'quantity', ['1 máy – 1.990.000đ', '2 máy – 3.790.000đ', '3 máy – 5.490.000đ']), button: 'Đặt hàng' }),
       S.footer(),
       S.floatingContact(),
+      S.popup({ title: 'Khoan đã! Giảm thêm 100.000đ', text: 'Để lại số điện thoại để giữ mã giảm giá cho đơn hàng AirPure của bạn.', button: 'Giữ mã giảm giá', trigger: 'exit', delay: 20 }),
     ],
   },
 };
@@ -355,7 +436,7 @@ function listTemplates() {
 }
 
 function listBlocks() {
-  return BLOCKS.map(([id, label]) => ({ id, label, html: S[id]() }));
+  return BLOCKS.map(([id, label]) => ({ id, label, html: S[id](), ...(WIDGET_BLOCKS.has(id) ? { css: widgetCss() } : {}) }));
 }
 
 const BASE_CSS = baseCss();
