@@ -4,6 +4,9 @@ Nền tảng **SaaS tạo landing page kéo thả** cho doanh nghiệp Việt Na
 
 Lõi trình thiết kế dùng [GrapesJS](https://github.com/GrapesJS/grapesjs). Kiến trúc SaaS (workspace, xuất bản, tên miền, thu lead) được thiết kế tham khảo ý tưởng từ [Webstudio](https://github.com/webstudio-is/webstudio) và [OpenPage](https://github.com/buildingopen/openpage), nhưng **không sao chép mã nguồn** của hai dự án này. Lý do xem mục [Giấy phép](#giấy-phép-mã-nguồn-bên-thứ-ba).
 
+- **Triển khai production:** [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- **Kế hoạch và việc chưa hoàn thành (cho dev tiếp tục):** [PLAN.md](PLAN.md), chi tiết từng việc trong [docs/todo/](docs/todo/)
+
 ## Tính năng
 
 | Nhóm | Chi tiết |
