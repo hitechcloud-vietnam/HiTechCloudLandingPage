@@ -12,6 +12,7 @@ const { createAccountRouter } = require('./routes/account');
 const { createNotifier } = require('./notify');
 const { createContentRouter } = require('./routes/content');
 const { createAbRouter } = require('./routes/abtests');
+const { createPublicApiRouter, createApiKeysRouter } = require('./routes/publicApi');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -73,6 +74,9 @@ function createApp({ db, config }) {
     next();
   });
 
+  // Public REST API v1 (bearer API keys, no cookies), so it bypasses the session CSRF checks.
+  app.use('/api/v1', createPublicApiRouter({ db, config }));
+
   // CSRF protection for the JSON API: reject cross-origin writes and require a
   // JSON body (which a cross-site HTML form cannot produce).
   app.use('/api', (req, res, next) => {
@@ -90,6 +94,7 @@ function createApp({ db, config }) {
   app.use('/api', createApiRouter({ db, sessions, access, billing, mailer, config, notifier }).router);
   app.use('/api', createContentRouter({ db, config: { ...config, uploadsDir }, access }));
   app.use('/api', createAbRouter({ db, access }));
+  app.use('/api', createApiKeysRouter({ db, access }));
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Không tìm thấy' }));
 
   // Editor vendor assets (GrapesJS + plugins BSD-3-Clause, Font Awesome OFL/MIT).

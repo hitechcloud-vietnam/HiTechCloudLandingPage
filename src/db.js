@@ -142,6 +142,20 @@ CREATE TABLE IF NOT EXISTS ab_tests (
   stopped_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS api_keys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_used_at TEXT,
+  revoked_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_workspace ON api_keys(workspace_id, id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(prefix);
 CREATE INDEX IF NOT EXISTS idx_ab_page ON ab_tests(page_id, status);
 CREATE INDEX IF NOT EXISTS idx_assets_workspace ON assets(workspace_id, id);
 CREATE INDEX IF NOT EXISTS idx_versions_page ON page_versions(page_id, id);
