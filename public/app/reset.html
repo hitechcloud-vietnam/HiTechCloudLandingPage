@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đặt lại mật khẩu · HiTechCloud LandingPage</title>
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <a class="brand" href="/">HiTech<span>Cloud</span></a>
+    <h1>Đặt mật khẩu mới</h1>
+    <div class="alert" id="error"></div>
+    <form id="form">
+      <label for="password">Mật khẩu mới</label>
+      <input id="password" name="password" type="password" minlength="8" autocomplete="new-password" required>
+      <label for="confirm">Nhập lại mật khẩu</label>
+      <input id="confirm" type="password" minlength="8" autocomplete="new-password" required>
+      <button class="btn" style="width:100%;margin-top:20px" type="submit">Cập nhật mật khẩu</button>
+    </form>
+  </div>
+</div>
+<script src="/assets/api.js"></script>
+<script>
+  HTC.$('#form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    HTC.$('#error').textContent = '';
+    if (HTC.$('#password').value !== HTC.$('#confirm').value) {
+      HTC.$('#error').textContent = 'Mật khẩu nhập lại không khớp';
+      return;
+    }
+    try {
+      const token = new URLSearchParams(location.search).get('token');
+      await HTC.api('/auth/reset', { method: 'POST', body: { token, password: HTC.$('#password').value } });
+      location.href = '/app/';
+    } catch (err) {
+      HTC.$('#error').textContent = err.message;
+    }
+  });
+</script>
+</body>
+</html>

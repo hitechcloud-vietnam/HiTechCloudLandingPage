@@ -7,6 +7,8 @@ const { createAccess } = require('./access');
 const { createApiRouter } = require('./routes/api');
 const { createSitesRouter } = require('./routes/sites');
 const { createBilling } = require('./billing');
+const { createMailer } = require('./mailer');
+const { createAccountRouter } = require('./routes/account');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -19,7 +21,18 @@ function createApp({ db, config }) {
   const access = createAccess(db);
   const appOrigin = new URL(config.appUrl).origin;
 
-  const billing = createBilling({ db, config });
+  const mailer = config.mailer || createMailer(config);
+  const billing = createBilling({ db, config, mailer });
+  app.locals.mailer = mailer;
+
+  app.get('/healthz', (_req, res) => {
+    try {
+      db.prepare('SELECT 1').get();
+      res.json({ ok: true });
+    } catch {
+      res.status(503).json({ ok: false });
+    }
+  });
 
   app.use(sessions.load);
 
@@ -28,6 +41,16 @@ function createApp({ db, config }) {
 
   // Published customer sites (custom domains, subdomains, /p/, /preview, lead capture).
   app.use(createSitesRouter({ db, config, access }));
+
+  // Security headers for the dashboard, editor and API (published pages set their own).
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    if (config.secureCookies) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    next();
+  });
 
   // CSRF protection for the JSON API: reject cross-origin writes and require a
   // JSON body (which a cross-site HTML form cannot produce).
@@ -41,7 +64,8 @@ function createApp({ db, config }) {
     next();
   });
   app.use('/api', express.json({ limit: '5mb' }));
-  app.use('/api', createApiRouter({ db, sessions, access, billing }).router);
+  app.use('/api', createAccountRouter({ db, config, mailer, sessions }));
+  app.use('/api', createApiRouter({ db, sessions, access, billing, mailer, config }).router);
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Không tìm thấy' }));
 
   // Editor vendor assets (GrapesJS + plugins BSD-3-Clause, Font Awesome OFL/MIT).

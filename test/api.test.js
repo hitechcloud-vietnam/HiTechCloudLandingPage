@@ -16,6 +16,7 @@ async function startServer() {
     superAdmins: ['root@hitechcloud.vn'],
     sessionDays: 1,
     secureCookies: false,
+    quietMail: true,
   };
   const server = createApp({ db, config }).listen(0);
   await new Promise((r) => server.once('listening', r));

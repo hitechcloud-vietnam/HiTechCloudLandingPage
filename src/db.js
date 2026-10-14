@@ -90,6 +90,26 @@ CREATE TABLE IF NOT EXISTS page_views (
   PRIMARY KEY (page_id, day)
 );
 
+CREATE TABLE IF NOT EXISTS password_resets (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL,
+  used_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS invitations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('admin', 'editor')),
+  token_hash TEXT NOT NULL UNIQUE,
+  invited_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  expires_at TEXT NOT NULL,
+  accepted_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (workspace_id, email)
+);
+
 CREATE INDEX IF NOT EXISTS idx_orders_workspace ON orders(workspace_id, id);
 CREATE INDEX IF NOT EXISTS idx_leads_site ON leads(site_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);

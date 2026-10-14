@@ -4,6 +4,8 @@ const express = require('express');
 const { hashPassword, verifyPassword, requireUser } = require('../auth');
 const { HttpError } = require('../access');
 const { addMonths } = require('../billing');
+const { createRateLimiter } = require('../ratelimit');
+const { acceptInvitation, createInvitation } = require('./account');
 const { transaction } = require('../db');
 const { PLANS, workspacePlan, effectivePlanId, publicPlan } = require('../plans');
 const { renderTemplate, listTemplates, listBlocks, BASE_CSS } = require('../templates');
@@ -44,8 +46,10 @@ function csvCell(value) {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
-function createApiRouter({ db, sessions, access, billing }) {
+function createApiRouter({ db, sessions, access, billing, mailer, config }) {
   const r = express.Router();
+  const loginLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 10 });
+  const signupLimiter = createRateLimiter({ windowMs: 3600_000, max: 10 });
 
   // Wrap handlers so thrown HttpErrors become JSON responses.
   const h = (fn) => (req, res, next) => {
@@ -87,10 +91,12 @@ function createApiRouter({ db, sessions, access, billing }) {
 
   // ---------- Auth ----------
   r.post('/auth/signup', h((req, res) => {
+    if (!signupLimiter(req.ip)) throw new HttpError(429, 'Bạn thao tác quá nhanh, vui lòng thử lại sau');
     const name = str(req.body.name, { required: true, field: 'Họ tên', max: 100 });
     const email = str(req.body.email, { required: true, field: 'Email', max: 200 }).toLowerCase();
     const password = typeof req.body.password === 'string' ? req.body.password : '';
     const workspaceName = str(req.body.workspaceName, { field: 'Tên workspace', max: 100 }) || `Workspace của ${name}`;
+    const inviteToken = typeof req.body.inviteToken === 'string' ? req.body.inviteToken : '';
     if (!EMAIL_RE.test(email)) throw new HttpError(400, 'Email không hợp lệ');
     if (password.length < 8 || password.length > 200) throw new HttpError(400, 'Mật khẩu cần ít nhất 8 ký tự');
 
@@ -100,26 +106,37 @@ function createApiRouter({ db, sessions, access, billing }) {
         const u = db
           .prepare('INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)')
           .run(email, name, hashPassword(password));
-        const w = db.prepare('INSERT INTO workspaces (name) VALUES (?)').run(workspaceName);
-        db.prepare('INSERT INTO memberships (workspace_id, user_id, role) VALUES (?, ?, ?)').run(
-          w.lastInsertRowid,
-          u.lastInsertRowid,
-          'owner'
-        );
-        return Number(u.lastInsertRowid);
+        const id = Number(u.lastInsertRowid);
+        // Invited users join the inviter's workspace instead of getting their own.
+        if (!inviteToken) {
+          const w = db.prepare('INSERT INTO workspaces (name) VALUES (?)').run(workspaceName);
+          db.prepare('INSERT INTO memberships (workspace_id, user_id, role) VALUES (?, ?, ?)').run(w.lastInsertRowid, id, 'owner');
+        }
+        return id;
       });
     } catch (err) {
       if (isUniqueViolation(err)) throw new HttpError(409, 'Email đã được đăng ký');
       throw err;
     }
+    let workspaceId = null;
+    if (inviteToken) {
+      try {
+        workspaceId = acceptInvitation(db, inviteToken, { id: userId, email });
+      } catch {
+        // Invalid/expired invite: fall back to a personal workspace.
+        const w = db.prepare('INSERT INTO workspaces (name) VALUES (?)').run(workspaceName);
+        db.prepare('INSERT INTO memberships (workspace_id, user_id, role) VALUES (?, ?, ?)').run(w.lastInsertRowid, userId, 'owner');
+      }
+    }
     sessions.create(res, userId);
     res.status(201);
-    return { ok: true };
+    return { ok: true, workspaceId };
   }));
 
   r.post('/auth/login', h((req, res) => {
     const email = str(req.body.email, { max: 200 }).toLowerCase();
     const password = typeof req.body.password === 'string' ? req.body.password : '';
+    if (!loginLimiter(`${req.ip}:${email}`)) throw new HttpError(429, 'Đăng nhập sai quá nhiều lần, vui lòng thử lại sau 15 phút');
     const user = db.prepare('SELECT id, password_hash FROM users WHERE email = ?').get(email);
     if (!user || !verifyPassword(password, user.password_hash)) {
       throw new HttpError(401, 'Email hoặc mật khẩu không đúng');
@@ -263,25 +280,55 @@ function createApiRouter({ db, sessions, access, billing }) {
       .all(ws.id);
   }));
 
-  r.post('/workspaces/:wid/members', h((req, res) => {
+  r.get('/workspaces/:wid/invitations', h((req) => {
+    const { ws } = access.workspace(req.user, req.params.wid);
+    return db
+      .prepare('SELECT id, email, role, expires_at, created_at FROM invitations WHERE workspace_id = ? AND accepted_at IS NULL AND expires_at > ? ORDER BY id DESC')
+      .all(ws.id, new Date().toISOString());
+  }));
+
+  r.delete('/workspaces/:wid/invitations/:iid', h((req) => {
+    const { ws } = access.workspace(req.user, req.params.wid, 'admin');
+    db.prepare('DELETE FROM invitations WHERE id = ? AND workspace_id = ?').run(req.params.iid, ws.id);
+    return { ok: true };
+  }));
+
+  r.post('/workspaces/:wid/members', ha(async (req, res) => {
     const { ws, role: myRole } = access.workspace(req.user, req.params.wid, 'admin');
     const email = str(req.body.email, { required: true, field: 'Email' }).toLowerCase();
+    if (!EMAIL_RE.test(email)) throw new HttpError(400, 'Email không hợp lệ');
     const role = req.body.role === 'admin' ? 'admin' : 'editor';
     if (role === 'admin' && myRole !== 'owner') throw new HttpError(403, 'Chỉ chủ sở hữu mới thêm được quản trị viên');
     const plan = workspacePlan(ws);
-    if (usage(ws.id).members >= plan.maxMembers) {
+    const pending = db
+      .prepare('SELECT COUNT(*) AS n FROM invitations WHERE workspace_id = ? AND accepted_at IS NULL AND expires_at > ? AND email != ?')
+      .get(ws.id, new Date().toISOString(), email).n;
+    if (usage(ws.id).members + pending >= plan.maxMembers) {
       throw new HttpError(402, `Gói ${plan.name} cho phép tối đa ${plan.maxMembers} thành viên`);
     }
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-    if (!user) throw new HttpError(404, 'Người dùng chưa có tài khoản HiTechCloud');
-    try {
-      db.prepare('INSERT INTO memberships (workspace_id, user_id, role) VALUES (?, ?, ?)').run(ws.id, user.id, role);
-    } catch (err) {
-      if (isUniqueViolation(err)) throw new HttpError(409, 'Người dùng đã là thành viên');
-      throw err;
-    }
+    const user = db.prepare('SELECT id, name FROM users WHERE email = ?').get(email);
     res.status(201);
-    return { ok: true };
+    if (user) {
+      try {
+        db.prepare('INSERT INTO memberships (workspace_id, user_id, role) VALUES (?, ?, ?)').run(ws.id, user.id, role);
+      } catch (err) {
+        if (isUniqueViolation(err)) throw new HttpError(409, 'Người dùng đã là thành viên');
+        throw err;
+      }
+      await mailer.send({
+        to: email,
+        subject: `Bạn đã được thêm vào workspace "${ws.name}"`,
+        text: `Chào ${user.name},\n\n${req.user.name} đã thêm bạn vào workspace "${ws.name}" trên HiTechCloud LandingPage.\nĐăng nhập để bắt đầu: ${config.appUrl}/app/`,
+      });
+      return { status: 'added' };
+    }
+    const token = createInvitation(db, { workspaceId: ws.id, email, role, invitedBy: req.user.id });
+    await mailer.send({
+      to: email,
+      subject: `${req.user.name} mời bạn tham gia "${ws.name}" trên HiTechCloud`,
+      text: `Xin chào,\n\n${req.user.name} mời bạn cùng thiết kế landing page trong workspace "${ws.name}".\nNhận lời mời (hiệu lực 7 ngày): ${config.appUrl}/app/invite?token=${token}`,
+    });
+    return { status: 'invited' };
   }));
 
   r.delete('/workspaces/:wid/members/:uid', h((req) => {

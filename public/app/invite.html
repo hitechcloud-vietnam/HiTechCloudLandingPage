@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lời mời · HiTechCloud LandingPage</title>
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <a class="brand" href="/">HiTech<span>Cloud</span></a>
+    <h1 id="title">Lời mời tham gia</h1>
+    <p class="muted" id="desc">Đang tải…</p>
+    <div class="alert" id="error"></div>
+    <div id="actions" hidden>
+      <button class="btn" style="width:100%" id="accept" hidden>Chấp nhận lời mời</button>
+      <a class="btn" style="width:100%" id="signup" hidden>Tạo tài khoản để tham gia</a>
+      <a class="btn btn-ghost" style="width:100%;margin-top:8px" id="login" hidden>Tôi đã có tài khoản — Đăng nhập</a>
+    </div>
+  </div>
+</div>
+<script src="/assets/api.js"></script>
+<script>
+  (async () => {
+    const { api, $ } = HTC;
+    const token = new URLSearchParams(location.search).get('token') || '';
+    const back = encodeURIComponent(location.pathname + location.search);
+    try {
+      const inv = await api(`/invitations/${encodeURIComponent(token)}`);
+      $('#title').textContent = `Tham gia "${inv.workspace}"`;
+      $('#desc').textContent = `Lời mời dành cho ${inv.email} với vai trò ${inv.role === 'admin' ? 'Quản trị viên' : 'Biên tập viên'}.`;
+      let me = null;
+      try { me = await fetch('/api/auth/me').then((r) => (r.ok ? r.json() : null)); } catch {}
+      $('#actions').hidden = false;
+      if (me) {
+        $('#accept').hidden = false;
+        $('#accept').onclick = async () => {
+          try {
+            const res = await api('/invitations/accept', { method: 'POST', body: { token } });
+            HTC.setWorkspace(res.workspaceId);
+            location.href = '/app/';
+          } catch (err) { $('#error').textContent = err.message; }
+        };
+      } else if (inv.hasAccount) {
+        $('#login').hidden = false;
+        $('#login').href = `/app/login?next=${back}`;
+      } else {
+        $('#signup').hidden = false;
+        $('#signup').href = `/app/signup?invite=${encodeURIComponent(token)}&email=${encodeURIComponent(inv.email)}`;
+      }
+    } catch (err) {
+      $('#desc').textContent = '';
+      $('#error').textContent = err.message;
+    }
+  })();
+</script>
+</body>
+</html>

@@ -23,6 +23,7 @@
     "font-awesome": "4.7.0",
     "grapesjs": "0.23.6",
     "grapesjs-blocks-basic": "^1.0.2",
-    "grapesjs-plugin-forms": "^2.0.6"
+    "grapesjs-plugin-forms": "^2.0.6",
+    "nodemailer": "^10.1.1"
   }
 }

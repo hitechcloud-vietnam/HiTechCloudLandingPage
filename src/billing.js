@@ -32,7 +32,7 @@ function newOrderCode() {
   return String(Date.now() * 1000 + crypto.randomInt(1000));
 }
 
-function createBilling({ db, config }) {
+function createBilling({ db, config, mailer }) {
   const providers = createProviders(config);
 
   function getOrderByCode(provider, code) {
@@ -44,7 +44,7 @@ function createBilling({ db, config }) {
     if (amount !== undefined && Number(amount) !== order.amount) {
       throw new Error(`Số tiền không khớp cho đơn ${order.order_code}`);
     }
-    return transaction(db, () => {
+    const changed = transaction(db, () => {
       const fresh = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id);
       if (fresh.status === 'paid') return false;
       db.prepare("UPDATE orders SET status = 'paid', paid_at = datetime('now'), provider_ref = COALESCE(?, provider_ref) WHERE id = ?").run(ref || null, order.id);
@@ -61,6 +61,25 @@ function createBilling({ db, config }) {
         ws.id
       );
       return true;
+    });
+    if (changed) sendReceipt(order.id);
+    return changed;
+  }
+
+  function sendReceipt(orderId) {
+    if (!mailer) return;
+    const o = db
+      .prepare(
+        `SELECT o.*, u.email, u.name, w.name AS ws_name, w.plan_expires_at FROM orders o
+         LEFT JOIN users u ON u.id = o.user_id LEFT JOIN workspaces w ON w.id = o.workspace_id WHERE o.id = ?`
+      )
+      .get(orderId);
+    if (!o || !o.email) return;
+    const expires = o.plan_expires_at ? new Date(o.plan_expires_at).toLocaleDateString('vi-VN') : '';
+    mailer.send({
+      to: o.email,
+      subject: `Xác nhận thanh toán đơn #${o.id} – HiTechCloud`,
+      text: `Chào ${o.name},\n\nChúng tôi đã nhận ${o.amount.toLocaleString('vi-VN')}đ qua ${o.provider} cho gói ${PLANS[o.plan].name} (${o.months} tháng) của workspace "${o.ws_name}".\nGói có hiệu lực đến ${expires}.\n\nQuản lý gói: ${config.appUrl}/app/?tab=billing\nCảm ơn bạn đã sử dụng HiTechCloud!`,
     });
   }
 
