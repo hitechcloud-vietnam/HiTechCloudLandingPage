@@ -20,7 +20,7 @@ Lõi trình thiết kế dùng [GrapesJS](https://github.com/GrapesJS/grapesjs).
 | Quản trị nền tảng | `/app/admin`: số người dùng, workspace trả phí, MRR, doanh thu, danh sách khách hàng, lịch sử giao dịch, cấp gói thủ công |
 | Thống kê | Lượt xem trang 30 ngày (bỏ qua bot), số lead và tỉ lệ chuyển đổi theo từng trang |
 | Tích hợp marketing | Google Analytics 4, Google Tag Manager, Facebook Pixel, TikTok Pixel. Sự kiện chuyển đổi (Lead) gửi tự động khi khách điền form. Favicon, og:image, canonical, `sitemap.xml`, `robots.txt`. Chèn mã tùy chỉnh vào `<head>`/`<body>` (gói Pro trở lên) |
-| Thông báo lead | Email (chủ sở hữu, quản trị viên và tối đa 5 địa chỉ khác), webhook có ký HMAC (Zapier/Make/n8n/CRM, chặn gửi tới địa chỉ nội bộ để chống SSRF), Telegram bot. Có nút gửi thông báo thử |
+| Thông báo lead | Email (chủ sở hữu, quản trị viên và tối đa 5 địa chỉ khác), webhook có ký HMAC (Zapier/Make/n8n/CRM, chặn gửi tới địa chỉ nội bộ để chống SSRF), Telegram bot, Slack, Discord, Google Sheets (qua Apps Script). Các kênh gửi song song, nút gửi thông báo thử báo kết quả từng kênh. Xem [Kênh thông báo lead](#kênh-thông-báo-lead) |
 | Thư viện ảnh | Tải ảnh PNG/JPEG/GIF/WEBP vào editor. Kiểm tra định dạng bằng nội dung file. Dung lượng theo gói: 50 MB / 2 GB / 10 GB |
 | Lịch sử phiên bản | Tự lưu một phiên bản mỗi lần xuất bản (giữ 20 bản gần nhất), khôi phục về bản nháp. Có nhân bản trang |
 | Tài khoản | Quên/đặt lại mật khẩu qua email, mời thành viên qua email, đổi mật khẩu, giới hạn số lần đăng nhập sai |
@@ -64,6 +64,40 @@ docker compose up -d --build
 3. **Tên miền riêng:** khách thêm bản ghi TXT `_htc-verify.<domain>` (xác minh quyền sở hữu) và CNAME về `CNAME_TARGET` (trỏ lưu lượng), sau đó bấm "Kiểm tra DNS" trong cài đặt website.
 4. **Quản trị:** đặt `SUPERADMIN_EMAILS` để vào `/app/admin`.
 5. **Sao lưu:** chạy định kỳ `docker compose exec app node scripts/backup.js /data/backups`. Lệnh này dùng `VACUUM INTO`, chạy được khi ứng dụng vẫn đang hoạt động.
+
+## Kênh thông báo lead
+
+Cấu hình trong **Cài đặt website → Thông báo khi có lead mới**. URL của Slack, Discord và Google Sheets được coi là bí mật: sau khi lưu sẽ không hiển thị lại. Để trống ô khi lưu thì giữ nguyên giá trị cũ, nhập `-` để xóa. Bấm **Gửi thông báo thử** để kiểm tra, kết quả hiện theo từng kênh (vd `Slack: ✓ · Google Sheets: ✓`).
+
+- **Slack:** Slack → *Apps* → *Incoming Webhooks* → *Add to Slack*, chọn kênh rồi dán URL `https://hooks.slack.com/services/…`. Tin nhắn dùng định dạng mrkdwn, liệt kê các trường của lead và kèm link mở dashboard.
+- **Discord:** *Cài đặt kênh* → *Tích hợp* → *Webhook* → *Webhook mới* → *Sao chép URL webhook* (`https://discord.com/api/webhooks/…`). Nội dung tối đa 2000 ký tự (phần dài hơn bị cắt), không ping @everyone.
+- **Google Sheets:** mở Google Sheet → *Tiện ích mở rộng* → *Apps Script*, dán đoạn mã dưới đây và lưu. Sau đó chọn *Triển khai* → *Tùy chọn triển khai mới* → loại *Ứng dụng web*, *Thực thi với tư cách: Tôi*, *Ai có quyền truy cập: Bất kỳ ai*. Sao chép URL `https://script.google.com/macros/s/…/exec` và dán vào ô Google Sheets. Mỗi lead được gửi dưới dạng một dòng JSON phẳng `{createdAt, site, page, …các trường form, utm_source, utm_campaign, ref}`. Cột mới tự được thêm vào hàng tiêu đề.
+
+```js
+function doPost(e) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var row = JSON.parse(e.postData.contents);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+    var headers = sheet.getLastColumn()
+      ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+      : [];
+    Object.keys(row).forEach(function (k) {
+      if (headers.indexOf(k) === -1) headers.push(k);
+    });
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.appendRow(headers.map(function (h) {
+      return row[h] === undefined ? '' : row[h];
+    }));
+    return ContentService.createTextOutput('ok');
+  } finally {
+    lock.releaseLock();
+  }
+}
+```
+
+> Apps Script trả về mã 302 (chuyển hướng tới kết quả). Hệ thống coi 2xx/3xx là gửi thành công và không theo chuyển hướng. Mỗi lần sửa mã cần *Quản lý triển khai* → tạo phiên bản mới để thay đổi có hiệu lực.
 
 ## Cấu hình cổng thanh toán
 
@@ -114,7 +148,7 @@ src/
   routes/abtests.js  A/B testing (chia lưu lượng, thống kê, chọn phiên bản thắng)
   http.js, usage.js  Tiện ích dùng chung (bọc handler, đếm mức sử dụng)
   siteSettings.js    Cài đặt tích hợp marketing và thông báo theo từng website
-  notify.js          Gửi thông báo lead (email / webhook / Telegram)
+  notify.js          Gửi thông báo lead (email / webhook / Telegram / Slack / Discord / Google Sheets)
   domains.js         Xác minh tên miền riêng bằng DNS
   jobs.js            Nhắc gia hạn, dọn session và token hết hạn
   mailer.js          Gửi email qua SMTP
