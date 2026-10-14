@@ -28,6 +28,7 @@ Lõi trình thiết kế dùng [GrapesJS](https://github.com/GrapesJS/grapesjs).
 | Xác minh email & quyền dữ liệu | Xác minh email khi đăng ký (bắt buộc trước khi xuất bản trang hoặc thanh toán). Tải toàn bộ dữ liệu cá nhân (JSON), tự xóa tài khoản, chuyển quyền sở hữu workspace. Xem [Quyền dữ liệu cá nhân](#quyền-dữ-liệu-cá-nhân-nghị-định-132023) |
 | Tên miền riêng | Xác minh quyền sở hữu bằng bản ghi DNS TXT gắn với từng website. Chỉ tên miền đã xác minh, thuộc workspace còn gói trả phí, mới được phục vụ và cấp HTTPS. Yêu cầu gắn tên miền chưa xác minh quá 72 giờ sẽ được giải phóng cho website khác |
 | Vận hành | `docker-compose` kèm Caddy tự cấp HTTPS (kể cả tên miền của khách), `/healthz`, email nhắc gia hạn trước 7 ngày và 1 ngày, `npm run backup`, CI trên GitHub Actions |
+| An toàn nội dung | Chấm điểm rủi ro lừa đảo khi xuất bản, hàng đợi xem xét, tự động tạm ngưng trang giả mạo ngân hàng, form báo cáo vi phạm công khai `/_htc/report`, tạm ngưng website / tài khoản kèm email thông báo. Xem [An toàn nội dung](#an-toàn-nội-dung) |
 | Bảo mật | Mật khẩu băm scrypt, session lưu trong DB (cookie httpOnly, SameSite=Lax), chống CSRF (kiểm tra Origin và bắt buộc body JSON), trang khách hàng phục vụ trên domain dashboard được cô lập bằng `CSP: sandbox` |
 
 ## Chạy thử
@@ -170,6 +171,8 @@ src/
   routes/account.js  Quên mật khẩu, lời mời, đổi mật khẩu, xác minh email, xuất/xóa dữ liệu cá nhân
   routes/content.js  Thư viện ảnh, lịch sử phiên bản, nhân bản trang
   storage.js         Lưu ảnh tải lên: đĩa cục bộ hoặc S3-compatible (ký AWS SigV4)
+  safety.js          Chấm điểm rủi ro lừa đảo, tạm ngưng website / tài khoản
+  routes/safety.js   Form báo cáo vi phạm /_htc/report, API quản trị an toàn nội dung
   routes/abtests.js  A/B testing (chia lưu lượng, thống kê, chọn phiên bản thắng)
   http.js, usage.js  Tiện ích dùng chung (bọc handler, đếm mức sử dụng)
   siteSettings.js    Cài đặt tích hợp marketing và thông báo theo từng website
@@ -256,6 +259,47 @@ Hỗ trợ các quyền của chủ thể dữ liệu theo Nghị định 13/202
 - **Tải dữ liệu của tôi:** tệp JSON gồm hồ sơ, danh sách workspace tham gia và vai trò. Với workspace bạn sở hữu, tệp có thêm website, trang (HTML/CSS), lead và đơn hàng. Tệp không chứa mật khẩu băm, token, khóa tích hợp (như Telegram bot token) hay thông tin của thành viên khác.
 - **Xóa tài khoản:** cần nhập mật khẩu và gõ `XOA TAI KHOAN`. Hệ thống xóa vĩnh viễn tài khoản, session và các workspace bạn sở hữu (kèm website, trang, lead, đơn hàng), sau đó gửi email xác nhận. Nếu bạn còn sở hữu workspace có thành viên khác thì phải chuyển quyền sở hữu hoặc xóa các thành viên trước.
 - **Chuyển quyền sở hữu:** chủ sở hữu chuyển workspace cho một quản trị viên hoặc biên tập viên hiện có (tab **Thành viên**). Chủ sở hữu cũ trở thành quản trị viên.
+
+## An toàn nội dung
+
+Trang lừa đảo / giả mạo (đặc biệt là giả mạo ngân hàng, ví điện tử) là rủi ro lạm dụng lớn nhất của dịch vụ lưu trữ landing page. Hệ thống có ba lớp:
+
+**1. Báo cáo vi phạm.** Bất kỳ ai cũng gửi được báo cáo tại `/_htc/report` trên **mọi tên miền** đang phục vụ trang (đường dẫn `/p/…`, `<subdomain>.<PUBLISH_ROOT_DOMAIN>`, tên miền riêng), không cần đăng nhập. Nhãn “Tạo bởi HiTechCloud” của gói Miễn phí có thêm liên kết nhỏ “Báo cáo vi phạm”; với gói trả phí (không có nhãn), quy ước đường dẫn `/_htc/report` được nêu trong điều khoản sử dụng. Trên tên miền của khách, website được nhận diện theo tên miền; ở nơi khác người báo cáo nhập đường dẫn trang. Lý do: *Lừa đảo / giả mạo*, *Nội dung độc hại*, *Vi phạm bản quyền*, *Spam*, *Khác*, kèm mô tả và email liên hệ (không bắt buộc). Chống spam bằng honeypot và giới hạn 5 báo cáo/giờ cho mỗi IP. Trang báo cáo không có script và được phục vụ với `CSP: sandbox allow-forms`. Mỗi báo cáo mới được email tới các địa chỉ `SUPERADMIN_EMAILS`.
+
+**2. Tự động chấm điểm khi xuất bản.** Mỗi lần xuất bản (dashboard hoặc API `/api/v1`), HTML của trang được chấm điểm theo các dấu hiệu (heuristic thận trọng, xem `src/safety.js`):
+
+| Dấu hiệu | Điểm |
+|---|---|
+| Ô nhập mật khẩu (`type="password"`) | 30 |
+| Ô số thẻ / CVV-CVC / OTP / PIN (theo `name`, `id`, `placeholder`, `autocomplete`) | 30 / 30 / 25 / 20 |
+| Cụm từ lừa đảo thường gặp: “đăng nhập ngân hàng”, “xác minh tài khoản”, “tài khoản bị tạm khóa”, “nhập mã OTP”… (có hoặc không dấu) | 15 mỗi cụm, tối đa 30 |
+| Tên ngân hàng / ví điện tử (Vietcombank, BIDV, MB Bank, MoMo, ZaloPay…) trong tiêu đề / trong nội dung | 20 / 10 |
+| Form có `action` gốc trỏ ra máy chủ bên ngoài | 20 |
+| Mã gửi dữ liệu tới `api.telegram.org/bot…` | 40 |
+
+- Điểm từ **45** trở lên: trang vào hàng đợi xem xét của quản trị viên. Việc xuất bản **không bị chặn**; người dùng không được biết điểm hay lý do.
+- Điểm từ **60** trở lên **và** có cả ô mật khẩu lẫn tên ngân hàng/ví điện tử: trang vẫn được xuất bản nhưng website bị **tạm ngưng tự động** chờ xem xét. Chủ sở hữu và quản trị nền tảng nhận email. Tắt bằng `SAFETY_AUTO_SUSPEND=0` (khi đó chỉ gắn cờ).
+- Quản trị viên **bỏ qua** cảnh báo (nhầm lẫn) thì tạm ngưng tự động được gỡ và nội dung y hệt sẽ không bị gắn cờ lại khi xuất bản lần sau.
+- Mẫu trang có sẵn không bị gắn cờ (có test).
+
+**3. Tạm ngưng.** Quản trị nền tảng tạm ngưng / gỡ tạm ngưng website hoặc tài khoản kèm lý do; chủ sở hữu (hoặc người dùng) nhận email.
+
+- Website bị tạm ngưng: mọi URL (đường dẫn `/p/`, tên miền con, tên miền riêng, `sitemap.xml`, `robots.txt`) trả **451** “Trang đã bị tạm ngưng do vi phạm điều khoản”; không được cấp chứng chỉ HTTPS mới (`/_htc/tls-ask` trả 404); form không nhận lead; không xuất bản được (403). Dashboard hiện thông báo đỏ ở trang website. Tạm ngưng website cũng đóng các cảnh báo và báo cáo đang mở của website đó.
+- Tài khoản bị tạm ngưng: mọi session bị xóa và bị từ chối, đăng nhập trả 403. Không thể tạm ngưng tài khoản quản trị nền tảng.
+
+Giao diện: `/app/admin` → tab **An toàn nội dung** (trang bị gắn cờ kèm điểm và dấu hiệu, xem trước an toàn không chạy script, báo cáo đang mở / đã xử lý, danh sách đang tạm ngưng).
+
+| Method | Đường dẫn | Mô tả |
+|---|---|---|
+| GET/POST | `/_htc/report[?site=&page=]` | Form báo cáo vi phạm công khai (urlencoded: `reason`, `details`, `email`, `url`) |
+| GET | `/api/admin/safety/flags?status=open\|dismissed\|actioned` | Trang bị gắn cờ |
+| POST | `/api/admin/safety/flags/:id/dismiss` | Bỏ qua cảnh báo (gỡ tạm ngưng tự động nếu có) |
+| GET | `/api/admin/safety/reports?status=open\|resolved` | Báo cáo vi phạm |
+| POST | `/api/admin/safety/reports/:id/resolve` | Đánh dấu đã xử lý `{note?}` |
+| GET | `/api/admin/safety/pages/:id/preview` | Xem trước trang (CSP sandbox, không script, không form) |
+| GET | `/api/admin/safety/suspended` | Website và tài khoản đang tạm ngưng |
+| POST | `/api/admin/sites/:id/suspend`, `/unsuspend` | Tạm ngưng `{reason}` / gỡ tạm ngưng website |
+| POST | `/api/admin/users/:id/suspend`, `/unsuspend` | Tạm ngưng `{reason}` / gỡ tạm ngưng tài khoản |
 
 ## Lộ trình tiếp theo
 

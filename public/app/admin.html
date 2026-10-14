@@ -25,6 +25,7 @@
   <div class="tabs" role="tablist">
     <button class="active" data-tab="workspaces">Khách hàng (workspace)</button>
     <button data-tab="orders">Giao dịch</button>
+    <button data-tab="safety">An toàn nội dung <span class="badge badge-danger" id="safety-count" hidden></span></button>
   </div>
 
   <section data-panel="workspaces">
@@ -39,6 +40,35 @@
     <div class="table-wrap"><table>
       <thead><tr><th>Mã</th><th>Workspace</th><th>Gói</th><th>Số tiền</th><th>Cổng</th><th>Mã giao dịch</th><th>Trạng thái</th><th>Thời gian</th></tr></thead>
       <tbody id="orders"></tbody>
+    </table></div>
+  </section>
+
+  <section data-panel="safety" hidden>
+    <div class="alert" id="safety-error"></div>
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <h2 style="margin:8px 0">Trang bị gắn cờ tự động</h2>
+      <select id="flag-status" aria-label="Lọc cảnh báo"><option value="open">Chờ xem xét</option><option value="actioned">Đã xử lý</option><option value="dismissed">Đã bỏ qua</option></select>
+    </div>
+    <p class="hint">Hệ thống chấm điểm rủi ro mỗi khi trang được xuất bản (ô mật khẩu/OTP/số thẻ, cụm từ lừa đảo, thương hiệu ngân hàng, form gửi ra ngoài). Website có điểm cao kèm ô mật khẩu và thương hiệu ngân hàng bị tạm ngưng tự động; bỏ qua cảnh báo sẽ gỡ tạm ngưng tự động.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Điểm</th><th>Trang</th><th>Dấu hiệu</th><th>Website</th><th>Chủ sở hữu</th><th>Thời gian</th><th></th></tr></thead>
+      <tbody id="flags"></tbody>
+    </table></div>
+
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:24px">
+      <h2 style="margin:8px 0">Báo cáo vi phạm</h2>
+      <select id="report-status" aria-label="Lọc báo cáo"><option value="open">Đang mở</option><option value="resolved">Đã xử lý</option></select>
+    </div>
+    <p class="hint">Khách truy cập gửi báo cáo qua <code>/_htc/report</code> trên mọi tên miền (liên kết “Báo cáo vi phạm” trên nhãn của gói Miễn phí).</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>#</th><th>Trang</th><th>Lý do</th><th>Mô tả</th><th>Người báo cáo</th><th>Website / chủ sở hữu</th><th>Thời gian</th><th></th></tr></thead>
+      <tbody id="reports"></tbody>
+    </table></div>
+
+    <h2 style="margin:24px 0 8px">Đang tạm ngưng</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Loại</th><th>Đối tượng</th><th>Lý do</th><th>Từ</th><th></th></tr></thead>
+      <tbody id="suspended"></tbody>
     </table></div>
   </section>
 </main>
@@ -107,6 +137,88 @@ $('#workspaces').onchange = async (e) => {
 };
 
 load().catch(showError);
+</script>
+<script>
+// Trust & safety tab: flagged pages, abuse reports, suspensions.
+(() => {
+  const { api, esc, $ } = HTC;
+  const REASONS = { phishing: 'Lừa đảo / giả mạo', malware: 'Nội dung độc hại', copyright: 'Vi phạm bản quyền', spam: 'Spam', other: 'Khác' };
+  const when = (s) => (s ? new Date(`${s.replace(' ', 'T')}Z`).toLocaleString('vi-VN') : '—');
+  const btn = (action, id, label, cls = 'btn-ghost') => `<button class="btn btn-sm ${cls}" data-action="${action}" data-id="${id}">${label}</button>`;
+  const fail = (err) => { $('#safety-error').textContent = err ? err.message : ''; };
+  const siteCell = (x) => x.subdomain
+    ? `${esc(x.site_name)} <span class="hint">(${esc(x.custom_domain || x.subdomain)})</span>${x.site_suspended_at ? ' <span class="badge badge-danger">Đã tạm ngưng</span>' : ''}`
+    : '<span class="hint">—</span>';
+  const ownerCell = (x) => (x.owner_email ? `${esc(x.owner_email)}${x.owner_suspended_at ? ' <span class="badge badge-danger">Tạm ngưng</span>' : ''}` : '—');
+  const siteActions = (x) => [
+    x.site_id && !x.site_suspended_at ? btn('suspend-site', x.site_id, 'Tạm ngưng website', 'btn-danger') : '',
+    x.owner_id && !x.owner_suspended_at ? btn('suspend-user', x.owner_id, 'Tạm ngưng chủ sở hữu') : '',
+  ].join(' ');
+
+  async function loadSafety() {
+    fail(null);
+    const [flags, reports, suspended, openFlags, openReports] = await Promise.all([
+      api(`/admin/safety/flags?status=${$('#flag-status').value}`),
+      api(`/admin/safety/reports?status=${$('#report-status').value}`),
+      api('/admin/safety/suspended'),
+      $('#flag-status').value === 'open' ? null : api('/admin/safety/flags?status=open'),
+      $('#report-status').value === 'open' ? null : api('/admin/safety/reports?status=open'),
+    ]);
+    const pending = (openFlags || flags).length + (openReports || reports).length;
+    $('#safety-count').textContent = pending;
+    $('#safety-count').hidden = !pending;
+    const open = $('#flag-status').value === 'open';
+    $('#flags').innerHTML = flags.map((f) => `
+      <tr><td><span class="badge ${f.score >= 60 ? 'badge-danger' : ''}">${f.score}</span>${f.auto_suspended ? '<div class="hint">Tự động tạm ngưng</div>' : ''}</td>
+      <td>${esc(f.page_title || '(đã xóa)')} <span class="hint">/${esc(f.page_slug || '')}</span>${f.page_id ? `<div><a href="/api/admin/safety/pages/${f.page_id}/preview" target="_blank" rel="noopener">Xem trước an toàn</a></div>` : ''}</td>
+      <td><ul style="margin:0;padding-left:18px">${f.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul></td>
+      <td>${siteCell(f)}</td><td>${ownerCell(f)}</td><td>${when(f.updated_at)}</td>
+      <td style="white-space:nowrap">${open ? `${siteActions(f)} ${btn('dismiss', f.id, 'Bỏ qua')}` : ''}</td></tr>`).join('')
+      || '<tr><td colspan="7" class="muted">Không có trang nào.</td></tr>';
+    const openReportsView = $('#report-status').value === 'open';
+    $('#reports').innerHTML = reports.map((r) => `
+      <tr><td>${r.id}</td><td><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer nofollow">${esc(r.url)}</a></td>
+      <td><span class="badge ${r.reason === 'phishing' ? 'badge-danger' : ''}">${esc(REASONS[r.reason] || r.reason)}</span></td>
+      <td style="max-width:320px;white-space:pre-wrap">${esc(r.details || '')}${r.resolution ? `<div class="hint">Xử lý: ${esc(r.resolution)}</div>` : ''}</td>
+      <td>${esc(r.contact_email || '—')}<div class="hint">${esc(r.ip || '')}</div></td>
+      <td>${siteCell(r)}<div>${ownerCell(r)}</div></td><td>${when(r.created_at)}</td>
+      <td style="white-space:nowrap">${openReportsView ? `${siteActions(r)} ${btn('resolve', r.id, 'Đã xử lý')}` : ''}</td></tr>`).join('')
+      || '<tr><td colspan="8" class="muted">Không có báo cáo nào.</td></tr>';
+    $('#suspended').innerHTML = [
+      ...suspended.sites.map((s) => `<tr><td>Website</td><td>${siteCell({ ...s, site_suspended_at: null })}<div class="hint">${esc(s.owner_email || '')}</div></td><td>${esc(s.site_suspended_reason || '')}</td><td>${when(s.site_suspended_at)}</td><td>${btn('unsuspend-site', s.id, 'Gỡ tạm ngưng')}</td></tr>`),
+      ...suspended.users.map((u) => `<tr><td>Người dùng</td><td>${esc(u.name)} <span class="hint">${esc(u.email)}</span></td><td>${esc(u.suspended_reason || '')}</td><td>${when(u.suspended_at)}</td><td>${btn('unsuspend-user', u.id, 'Gỡ tạm ngưng')}</td></tr>`),
+    ].join('') || '<tr><td colspan="5" class="muted">Không có.</td></tr>';
+  }
+
+  const ACTIONS = {
+    'suspend-site': (id) => {
+      const reason = prompt('Lý do tạm ngưng website (gửi tới chủ sở hữu):', 'Trang lừa đảo / giả mạo');
+      return reason && api(`/admin/sites/${id}/suspend`, { method: 'POST', body: { reason } });
+    },
+    'suspend-user': (id) => {
+      const reason = prompt('Lý do tạm ngưng tài khoản (gửi tới người dùng):', 'Tạo trang lừa đảo / giả mạo');
+      return reason && api(`/admin/users/${id}/suspend`, { method: 'POST', body: { reason } });
+    },
+    'unsuspend-site': (id) => confirm('Gỡ tạm ngưng website này?') && api(`/admin/sites/${id}/unsuspend`, { method: 'POST', body: {} }),
+    'unsuspend-user': (id) => confirm('Gỡ tạm ngưng tài khoản này?') && api(`/admin/users/${id}/unsuspend`, { method: 'POST', body: {} }),
+    dismiss: (id) => confirm('Bỏ qua cảnh báo này (không vi phạm)?') && api(`/admin/safety/flags/${id}/dismiss`, { method: 'POST', body: {} }),
+    resolve: (id) => {
+      const note = prompt('Ghi chú xử lý (không bắt buộc):', '');
+      return note !== null && api(`/admin/safety/reports/${id}/resolve`, { method: 'POST', body: { note } });
+    },
+  };
+
+  document.querySelector('[data-panel="safety"]').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-action]');
+    if (!b) return;
+    try {
+      if (await ACTIONS[b.dataset.action](b.dataset.id)) await loadSafety();
+    } catch (err) { fail(err); }
+  });
+  $('#flag-status').onchange = () => loadSafety().catch(fail);
+  $('#report-status').onchange = () => loadSafety().catch(fail);
+  loadSafety().catch(fail);
+})();
 </script>
 </body>
 </html>

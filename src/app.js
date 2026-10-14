@@ -14,6 +14,7 @@ const { createContentRouter } = require('./routes/content');
 const { createAbRouter } = require('./routes/abtests');
 const { createPublicApiRouter, createApiKeysRouter } = require('./routes/publicApi');
 const { createAnalyticsRouter } = require('./routes/analytics');
+const { createSafetyRouter } = require('./routes/safety');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -97,6 +98,8 @@ function createApp({ db, config }) {
   app.use('/api', createAbRouter({ db, access }));
   app.use('/api', createApiKeysRouter({ db, access }));
   app.use('/api', createAnalyticsRouter({ db, config, access }));
+  // Abuse report form (/_htc/report, any host) and trust & safety admin API.
+  app.use(createSafetyRouter({ db, config, mailer }));
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Không tìm thấy' }));
 
   // Editor vendor assets (GrapesJS + plugins BSD-3-Clause, Font Awesome OFL/MIT).
