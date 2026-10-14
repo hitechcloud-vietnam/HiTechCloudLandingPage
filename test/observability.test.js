@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { startServer, client } = require('./helpers');
+const { startServer, client, verifyEmail } = require('./helpers');
 const config = require('../src/config');
 const { createLogger, logger, redact } = require('../src/logger');
 const { createErrorReporter } = require('../src/errors');
@@ -134,6 +134,7 @@ test('/metrics with token', async (t) => {
 
   const c = client(base);
   await c('POST', '/api/auth/signup', { name: 'Chủ', email: 'metrics@example.com', password: 'matkhau123' });
+  verifyEmail(db, 'metrics@example.com');
   const wsId = (await c('GET', '/api/auth/me')).data.workspaces[0].id;
   const site = (await c('POST', `/api/workspaces/${wsId}/sites`, { name: 'Shop', subdomain: 'shop' })).data;
   const page = (await c('GET', `/api/sites/${site.id}/pages`)).data[0];

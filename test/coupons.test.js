@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const payosLib = require('../src/payments/payos');
 const { startServer, client, verifyEmail } = require('./helpers');
+const { createLogger } = require('../src/logger');
 
 const PAYOS = { clientId: 'cid', apiKey: 'key', checksumKey: 'payos-checksum' };
 
@@ -37,7 +38,9 @@ function payosWebhook(req, amount = req.amount) {
 
 test('coupons', async (t) => {
   const gw = payosMock();
-  const { db, server, base, outbox } = await startServer({ payments: { payos: PAYOS }, fetch: gw.fetch });
+  const logLines = [];
+  const log = createLogger({ level: 'warn', stream: { write: (line) => logLines.push(line) } });
+  const { db, server, base, outbox } = await startServer({ payments: { payos: PAYOS }, fetch: gw.fetch, logger: log });
   t.after(() => server.close());
 
   const root = client(base);
@@ -235,13 +238,12 @@ test('coupons', async (t) => {
     assert.equal(b.status, 200);
 
     await webhook(payosWebhook(reqA));
-    const warn = t.mock.method(console, 'warn', () => {});
+    const logged = logLines.length;
     await webhook(payosWebhook(reqB));
     assert.equal(coupon('MOTLAN').redeemed_count, 1, 'never exceeds the limit');
     // The second customer paid, so the order is still honoured, and the overrun logged.
     assert.equal(db.prepare('SELECT status FROM orders WHERE id = ?').get(b.data.orderId).status, 'paid');
-    assert.ok(warn.mock.calls.some((c) => /MOTLAN/.test(c.arguments[0])));
-    warn.mock.restore();
+    assert.ok(logLines.slice(logged).some((line) => /MOTLAN/.test(line)));
 
     assert.equal((await preview({ coupon: 'MOTLAN', plan: 'pro', months: 1 })).data.valid, false);
     assert.equal((await root('PATCH', `/api/admin/coupons/${coupon('MOTLAN').id}`, { max_redemptions: 0 })).status, 400);
