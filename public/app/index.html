@@ -12,6 +12,7 @@
     <a class="brand" href="/app/">HiTech<span>Cloud</span></a>
     <div class="topbar-right">
       <select id="ws-select" aria-label="Chọn workspace"></select>
+      <a class="btn btn-ghost btn-sm" id="admin-link" href="/app/admin" hidden>Quản trị</a>
       <span class="user-name muted" id="user-name"></span>
       <button class="btn btn-ghost btn-sm" id="logout">Đăng xuất</button>
     </div>
@@ -52,7 +53,25 @@
     </div>
   </section>
 
-  <section data-panel="billing" hidden><div class="grid" id="plans"></div></section>
+  <section data-panel="billing" hidden>
+    <div class="stack">
+      <div class="alert alert-info" id="order-notice"></div>
+      <div class="card row">
+        <div><span class="muted">Gói hiện tại</span><strong style="display:block;font-size:20px" id="current-plan"></strong><span class="muted" id="plan-expiry"></span></div>
+        <div class="row" id="pay-options">
+          <label class="inline">Chu kỳ
+            <select id="cycle"><option value="1">1 tháng</option><option value="12">12 tháng (tặng 2 tháng)</option></select></label>
+          <label class="inline">Thanh toán qua
+            <select id="provider"></select></label>
+        </div>
+      </div>
+      <div class="grid" id="plans"></div>
+      <div class="card">
+        <h3 style="margin-top:0">Lịch sử thanh toán</h3>
+        <div class="table-wrap"><table><thead><tr><th>Mã</th><th>Gói</th><th>Số tiền</th><th>Cổng</th><th>Trạng thái</th><th>Thời gian</th></tr></thead><tbody id="orders"></tbody></table></div>
+      </div>
+    </div>
+  </section>
 
   <section data-panel="settings" hidden>
     <div class="card stack">
@@ -90,13 +109,21 @@
 <script>
 const { api, esc, $, formData, slugify, formatVnd, limit } = HTC;
 const ROLE_LABEL = { owner: 'Chủ sở hữu', admin: 'Quản trị viên', editor: 'Biên tập viên' };
-let me, ws;
+const ORDER_STATUS = { pending: ['Chờ thanh toán', ''], paid: ['Đã thanh toán', 'badge-success'], cancelled: ['Đã hủy', ''], failed: ['Lỗi', 'badge-danger'] };
+let me, ws, plans = [], providers = [];
+const params = new URLSearchParams(location.search);
+
+function selectTab(name) {
+  document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== name; });
+}
 
 function showError(err) { $('#error').textContent = err ? err.message : ''; }
 
 async function load() {
   me = await api('/auth/me');
   $('#user-name').textContent = me.user.name;
+  $('#admin-link').hidden = !me.user.isSuperAdmin;
   const current = HTC.currentWorkspace(me.workspaces);
   $('#ws-select').innerHTML = me.workspaces
     .map((w) => `<option value="${w.id}" ${w.id === current.id ? 'selected' : ''}>${esc(w.name)}</option>`)
@@ -116,7 +143,7 @@ async function loadWorkspace(id) {
     ['Thành viên', ws.usage.members, p.maxMembers],
     ['Lead tháng này', ws.usage.leadsThisMonth, p.maxLeadsPerMonth],
   ].map(([label, used, max]) => `<div class="card"><span class="muted">${label}</span><strong>${used} / ${limit(max)}</strong></div>`).join('');
-  await Promise.all([loadSites(), loadMembers(), loadPlans()]);
+  await Promise.all([loadSites(), loadMembers(), loadPlans(), loadOrders()]);
 }
 
 async function loadSites() {
@@ -143,10 +170,33 @@ async function loadMembers() {
 }
 
 async function loadPlans() {
-  const plans = await api('/plans');
-  $('#plans').innerHTML = plans.map((p) => `
-    <div class="card stack" ${p.id === ws.plan ? 'style="border:2px solid var(--primary)"' : ''}>
-      <div class="row"><h3 style="margin:0">${esc(p.name)}</h3>${p.id === ws.plan ? '<span class="badge badge-success">Đang dùng</span>' : ''}</div>
+  [plans, providers] = await Promise.all([api('/plans'), api('/billing/providers')]);
+  const canPay = ws.role === 'owner' || ws.role === 'admin';
+  $('#current-plan').textContent = ws.planDetails.name;
+  $('#plan-expiry').textContent = ws.effectivePlan !== 'free' && ws.plan_expires_at
+    ? `Hết hạn: ${new Date(ws.plan_expires_at).toLocaleDateString('vi-VN')}`
+    : ws.plan !== ws.effectivePlan ? 'Gói trả phí đã hết hạn' : '';
+  $('#provider').innerHTML = providers.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  $('#pay-options').hidden = !providers.length || !canPay;
+  renderPlans();
+}
+
+function renderPlans() {
+  const months = Number($('#cycle').value);
+  const canPay = (ws.role === 'owner' || ws.role === 'admin') && providers.length;
+  $('#plans').innerHTML = plans.map((p) => {
+    const current = p.id === ws.effectivePlan;
+    const total = p.priceVnd * (months === 12 ? 10 : 1);
+    let action = '';
+    if (p.priceVnd > 0) {
+      action = canPay
+        ? `<button class="btn btn-sm" data-buy="${p.id}">${current ? 'Gia hạn' : 'Nâng cấp'} · ${total.toLocaleString('vi-VN')}đ</button>`
+        : '<a class="btn btn-ghost btn-sm" href="mailto:sales@hitechcloud.vn">Liên hệ nâng cấp</a>';
+    }
+    if (me.user.isSuperAdmin && !current) action += ` <button class="btn btn-ghost btn-sm" data-plan="${p.id}">Cấp gói (admin)</button>`;
+    return `
+    <div class="card stack" ${current ? 'style="border:2px solid var(--primary)"' : ''}>
+      <div class="row"><h3 style="margin:0">${esc(p.name)}</h3>${current ? '<span class="badge badge-success">Đang dùng</span>' : ''}</div>
       <strong style="font-size:22px">${formatVnd(p.priceVnd)}</strong>
       <ul class="muted" style="padding-left:18px;margin:0">
         <li>${limit(p.maxSites)} website</li>
@@ -156,22 +206,43 @@ async function loadPlans() {
         <li>${p.customDomain ? 'Tên miền riêng' : 'Chỉ tên miền phụ'}</li>
         <li>${p.removeBranding ? 'Không gắn thương hiệu HiTechCloud' : 'Có gắn nhãn HiTechCloud'}</li>
       </ul>
-      ${p.id === ws.plan ? '' : me.user.isSuperAdmin
-        ? `<button class="btn btn-sm" data-plan="${p.id}">Chuyển sang gói này (admin)</button>`
-        : '<a class="btn btn-ghost btn-sm" href="mailto:sales@hitechcloud.vn">Liên hệ nâng cấp</a>'}
-    </div>`).join('');
+      <div class="row" style="justify-content:flex-start">${action}</div>
+    </div>`;
+  }).join('');
+}
+
+async function loadOrders() {
+  const orders = await api(`/workspaces/${ws.id}/orders`);
+  const planName = (id) => (plans.find((p) => p.id === id) || { name: id }).name;
+  $('#orders').innerHTML = orders.length
+    ? orders.map((o) => {
+      const [label, cls] = ORDER_STATUS[o.status];
+      return `<tr><td>#${o.id}</td><td>${esc(planName(o.plan))} · ${o.months} tháng</td><td>${o.amount.toLocaleString('vi-VN')}đ</td>
+        <td>${esc(o.provider)}</td><td><span class="badge ${cls}">${label}</span>
+        ${o.checkout_url ? ` <a href="${esc(o.checkout_url)}">Tiếp tục thanh toán</a>` : ''}</td>
+        <td>${esc(o.paid_at || o.created_at)}</td></tr>`;
+    }).join('')
+    : '<tr><td colspan="6" class="muted">Chưa có giao dịch.</td></tr>';
+
+  const orderId = Number(params.get('order'));
+  const o = orders.find((x) => x.id === orderId);
+  $('#order-notice').textContent = !o ? '' : o.status === 'paid'
+    ? `Thanh toán đơn #${o.id} thành công. Gói ${planName(o.plan)} đã được kích hoạt.`
+    : o.status === 'pending'
+      ? `Đơn #${o.id} đang chờ xác nhận thanh toán. Trang sẽ tự cập nhật khi cổng thanh toán báo về.`
+      : `Đơn #${o.id}: ${ORDER_STATUS[o.status][0]}.`;
+  if (o && o.status === 'pending' && !loadOrders.polling) {
+    loadOrders.polling = setTimeout(() => { loadOrders.polling = null; loadWorkspace(ws.id).catch(showError); }, 5000);
+  }
 }
 
 // ----- events -----
 $('#logout').onclick = HTC.logout;
 $('#ws-select').onchange = (e) => loadWorkspace(Number(e.target.value)).catch(showError);
 
-document.querySelectorAll('.tabs button').forEach((btn) => {
-  btn.onclick = () => {
-    document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b === btn));
-    document.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== btn.dataset.tab; });
-  };
-});
+document.querySelectorAll('.tabs button').forEach((btn) => { btn.onclick = () => selectTab(btn.dataset.tab); });
+if (params.get('tab')) selectTab(params.get('tab'));
+$('#cycle').onchange = renderPlans;
 
 $('#member-form').onsubmit = async (e) => {
   e.preventDefault();
@@ -190,9 +261,23 @@ $('#members').onclick = async (e) => {
 };
 
 $('#plans').onclick = async (e) => {
-  const plan = e.target.dataset.plan;
-  if (!plan) return;
-  try { await api(`/workspaces/${ws.id}/plan`, { method: 'POST', body: { plan } }); await loadWorkspace(ws.id); } catch (err) { showError(err); }
+  const { plan, buy } = e.target.dataset;
+  showError();
+  try {
+    if (buy) {
+      e.target.disabled = true;
+      const res = await api(`/workspaces/${ws.id}/checkout`, {
+        method: 'POST',
+        body: { plan: buy, months: Number($('#cycle').value), provider: $('#provider').value },
+      });
+      location.href = res.checkoutUrl;
+    } else if (plan) {
+      const months = plan === 'free' ? '' : prompt('Số tháng (để trống = không giới hạn)', '1');
+      if (months === null) return;
+      await api(`/workspaces/${ws.id}/plan`, { method: 'POST', body: { plan, months } });
+      await loadWorkspace(ws.id);
+    }
+  } catch (err) { showError(err); e.target.disabled = false; }
 };
 
 $('#ws-form').onsubmit = async (e) => {

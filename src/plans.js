@@ -37,8 +37,29 @@ const PLANS = {
   },
 };
 
+// Billing cycles: yearly pays for 10 months (2 months free).
+const BILLING_CYCLES = { 1: 1, 12: 10 };
+
 function getPlan(id) {
   return PLANS[id] || PLANS.free;
+}
+
+// A paid plan falls back to free once its subscription expires.
+// plan_expires_at = NULL means no expiry (free plan, or granted by a platform admin).
+function effectivePlanId(ws, now = new Date()) {
+  if (ws.plan !== 'free' && ws.plan_expires_at && new Date(ws.plan_expires_at) <= now) return 'free';
+  return PLANS[ws.plan] ? ws.plan : 'free';
+}
+
+function workspacePlan(ws) {
+  return getPlan(effectivePlanId(ws));
+}
+
+function priceFor(planId, months) {
+  const plan = PLANS[planId];
+  const factor = BILLING_CYCLES[months];
+  if (!plan || !plan.priceVnd || !factor) return null;
+  return plan.priceVnd * factor;
 }
 
 // JSON cannot encode Infinity, so expose unlimited values as null.
@@ -48,4 +69,4 @@ function publicPlan(plan) {
   );
 }
 
-module.exports = { PLANS, getPlan, publicPlan };
+module.exports = { PLANS, BILLING_CYCLES, getPlan, effectivePlanId, workspacePlan, priceFor, publicPlan };

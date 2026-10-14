@@ -11,7 +11,7 @@
   <div class="container">
     <a class="brand" href="/app/">HiTech<span>Cloud</span></a>
     <div class="topbar-right">
-      <a class="btn btn-ghost btn-sm" href="/app/">← Bảng điều khiển</a>
+      <a class="btn btn-ghost btn-sm" href="/app/">←<span class="hide-sm"> Bảng điều khiển</span></a>
       <button class="btn btn-ghost btn-sm" id="logout">Đăng xuất</button>
     </div>
   </div>
@@ -36,7 +36,7 @@
 
   <section data-panel="pages">
     <div class="table-wrap"><table>
-      <thead><tr><th>Trang</th><th>Đường dẫn</th><th>Trạng thái</th><th style="width:1%"></th></tr></thead>
+      <thead><tr><th>Trang</th><th>Đường dẫn</th><th>Trạng thái</th><th>Lượt xem 30 ngày</th><th>Lead 30 ngày</th><th style="width:1%"></th></tr></thead>
       <tbody id="pages"></tbody>
     </table></div>
   </section>
@@ -116,6 +116,8 @@ async function loadPages() {
       <td><strong>${esc(p.title)}</strong></td>
       <td><a href="${esc(HTC.publicUrl(site, p.slug))}" target="_blank" rel="noopener">/${p.slug === 'index' ? '' : esc(p.slug)}</a></td>
       <td>${p.published_at ? `<span class="badge badge-success">Đã xuất bản</span><div class="hint">${esc(p.published_at)} UTC</div>` : '<span class="badge">Bản nháp</span>'}</td>
+      <td>${p.views_30d.toLocaleString('vi-VN')}</td>
+      <td>${p.leads_30d}${p.views_30d ? ` <span class="hint">(${((p.leads_30d / p.views_30d) * 100).toFixed(1)}%)</span>` : ''}</td>
       <td><div class="row" style="flex-wrap:nowrap">
         <a class="btn btn-sm" href="/editor?page=${p.id}">Thiết kế</a>
         <a class="btn btn-ghost btn-sm" href="/preview/${p.id}" target="_blank" rel="noopener">Xem trước</a>

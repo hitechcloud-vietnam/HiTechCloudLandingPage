@@ -1,13 +1,15 @@
 'use strict';
 
 const express = require('express');
-const { getPlan } = require('../plans');
+const { workspacePlan } = require('../plans');
 const { renderPage, renderMessage } = require('../render');
 const { monthStart } = require('./api');
 
 // Pages served from the dashboard origin get an opaque origin via CSP sandbox,
 // so customer-authored scripts can never act on the dashboard session.
 const SANDBOX_CSP = 'sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals';
+
+const BOT_RE = /bot|crawl|spider|slurp|preview|monitor|curl|wget/i;
 
 function createRateLimiter({ windowMs, max }) {
   const hits = new Map();
@@ -43,8 +45,13 @@ function createSitesRouter({ db, config, access }) {
       .prepare('SELECT * FROM pages WHERE site_id = ? AND slug = ? AND published_html IS NOT NULL')
       .get(site.id, pageSlug || 'index');
     if (!page) return sendHtml(res, renderMessage('404', 'Trang không tồn tại hoặc chưa được xuất bản'), sandbox);
-    const ws = db.prepare('SELECT plan FROM workspaces WHERE id = ?').get(site.workspace_id);
-    res.setHeader('Cache-Control', 'public, max-age=60');
+    const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(site.workspace_id);
+    if (!BOT_RE.test(req.get('user-agent') || '')) {
+      db.prepare(
+        'INSERT INTO page_views (page_id, day, views) VALUES (?, ?, 1) ON CONFLICT (page_id, day) DO UPDATE SET views = views + 1'
+      ).run(page.id, new Date().toISOString().slice(0, 10));
+    }
+    res.setHeader('Cache-Control', 'no-cache');
     sendHtml(
       res,
       {
@@ -53,7 +60,7 @@ function createSitesRouter({ db, config, access }) {
           site,
           html: page.published_html,
           css: page.published_css,
-          showBranding: !getPlan(ws.plan).removeBranding,
+          showBranding: !workspacePlan(ws).removeBranding,
           notice: req.query.submitted === '1' ? 'Cảm ơn bạn! Thông tin đã được gửi thành công.' : '',
         }),
       },
@@ -95,14 +102,14 @@ function createSitesRouter({ db, config, access }) {
     }
     if (!Object.keys(data).length) return res.redirect(303, back);
 
-    const ws = db.prepare('SELECT plan FROM workspaces WHERE id = ?').get(site.workspace_id);
+    const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(site.workspace_id);
     const used = db
       .prepare(
         `SELECT COUNT(*) AS n FROM leads l JOIN sites s ON s.id = l.site_id
          WHERE s.workspace_id = ? AND l.created_at >= ?`
       )
       .get(site.workspace_id, monthStart()).n;
-    if (used >= getPlan(ws.plan).maxLeadsPerMonth) {
+    if (used >= workspacePlan(ws).maxLeadsPerMonth) {
       return sendHtml(res, renderMessage('Tạm ngưng nhận đăng ký', 'Website đã đạt giới hạn tiếp nhận trong tháng.', 503));
     }
     db.prepare('INSERT INTO leads (site_id, page_slug, data_json, ip) VALUES (?, ?, ?, ?)').run(
