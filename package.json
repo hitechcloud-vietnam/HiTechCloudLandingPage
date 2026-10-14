@@ -11,7 +11,8 @@
     "start": "node --disable-warning=ExperimentalWarning src/server.js",
     "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
     "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\"",
-    "backup": "node --disable-warning=ExperimentalWarning scripts/backup.js"
+    "backup": "node --disable-warning=ExperimentalWarning scripts/backup.js",
+    "e2e": "playwright test -c e2e/playwright.config.js"
   },
   "repository": {
     "type": "git",
@@ -26,5 +27,8 @@
     "grapesjs-blocks-basic": "^1.0.2",
     "grapesjs-plugin-forms": "^2.0.6",
     "nodemailer": "^10.1.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
   }
 }

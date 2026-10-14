@@ -4,3 +4,6 @@ data
 test
 *.db
 .env
+e2e
+playwright-report
+test-results
