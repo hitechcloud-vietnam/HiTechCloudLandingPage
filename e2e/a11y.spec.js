@@ -1,6 +1,6 @@
 'use strict';
 
-const { test, expect, signupAndVerify } = require('./helpers');
+const { test, expect, signupAndVerify, createSiteFromTemplate } = require('./helpers');
 
 // Lightweight accessibility / responsiveness smoke checks (no external engine):
 // no console errors, no horizontal scrolling at 375px, every visible form
@@ -87,5 +87,24 @@ test.describe('Khả năng truy cập & hiển thị di động', () => {
     await expect(page.locator('#site-dialog')).toBeVisible();
     await expect(page.locator('#templates input[type="radio"]').first()).toBeVisible();
     await expectAccessible(page, errors);
+    await page.keyboard.press('Escape');
+
+    // Account settings: password change, API keys, personal-data rights.
+    await page.locator('.tabs [data-tab="settings"]').click();
+    await expect(page.locator('[data-panel="settings"]')).toBeVisible();
+    await expectAccessible(page, errors);
+  });
+
+  test('trang website, từng tab @mobile', async ({ page }) => {
+    const errors = watchConsole(page);
+    await signupAndVerify(page);
+    await createSiteFromTemplate(page, { template: 'leadgen' });
+    for (const tab of ['pages', 'leads', 'abtests', 'analytics', 'settings']) {
+      await page.locator(`.tabs [data-tab="${tab}"]`).click();
+      await expect(page.locator(`[data-panel="${tab}"]`)).toBeVisible();
+      // Expand collapsed help (e.g. the Google Sheets script) so it is measured too.
+      for (const d of await page.locator(`[data-panel="${tab}"] details`).all()) await d.evaluate((el) => (el.open = true));
+      await expectAccessible(page, errors);
+    }
   });
 });

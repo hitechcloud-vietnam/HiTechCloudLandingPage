@@ -199,7 +199,7 @@ npx playwright show-report                    # xem báo cáo HTML (playwright-r
   - `editor.spec.js`: tạo website từ mẫu → mở trình thiết kế → sửa tiêu đề → lưu (“Đã lưu”) → tải ảnh qua Asset Manager → xuất bản → kiểm tra `/p/<tên-miền-phụ>`; tài khoản chưa xác minh không xuất bản được.
   - `leads.spec.js`: gửi form trên trang đã xuất bản kèm UTM → banner cảm ơn → lead hiện trong tab “Khách hàng tiềm năng” với nguồn → đổi trạng thái, lọc.
   - `billing.spec.js`: bảng giá, chặn tính năng Pro ở gói miễn phí, super-admin cấp gói Pro trong trang quản trị → tên miền riêng (hướng dẫn DNS) và A/B testing hoạt động. Thanh toán qua cổng thật không chạy ở đây (đã có test API với gateway giả trong `test/billing.test.js`).
-  - `a11y.spec.js`: trang chủ, đăng nhập, đăng ký, quên mật khẩu, bảng điều khiển ở 375px: không lỗi console, không cuộn ngang, mọi ô nhập liệu đang hiển thị đều có nhãn/`aria-label`, có `lang="vi"`.
+  - `a11y.spec.js`: trang chủ, đăng nhập, đăng ký, quên mật khẩu, bảng điều khiển (kể cả tab Cài đặt) và từng tab của trang website ở 375px: không lỗi console, không cuộn ngang, mọi ô nhập liệu đang hiển thị đều có nhãn/`aria-label`, có `lang="vi"`.
 - Trên CI (job `e2e` trong `.github/workflows/ci.yml`) test được chạy lại 1 lần nếu lỗi, lưu trace ở lần chạy lại và tải lên artifact `playwright-report` (kèm `test-results/`, `e2e/server.log`) khi thất bại.
 
 ## Kiến trúc

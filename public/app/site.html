@@ -85,8 +85,8 @@
 
   <section data-panel="leads" hidden>
     <form class="row" id="lead-filters" style="margin-bottom:12px;justify-content:flex-start">
-      <input name="q" placeholder="Tìm tên, SĐT, ghi chú…" style="flex:1 1 200px;width:auto">
-      <select name="status" style="width:auto"><option value="">Tất cả trạng thái</option></select>
+      <input name="q" type="search" placeholder="Tìm tên, SĐT, ghi chú…" aria-label="Tìm khách hàng tiềm năng" style="flex:1 1 200px;width:auto">
+      <select name="status" aria-label="Lọc theo trạng thái" style="width:auto"><option value="">Tất cả trạng thái</option></select>
       <label class="inline" style="font-weight:400">Từ <input type="date" name="from" style="width:auto"></label>
       <label class="inline" style="font-weight:400">Đến <input type="date" name="to" style="width:auto"></label>
       <button class="btn btn-ghost btn-sm" type="submit">Lọc</button>
@@ -191,7 +191,7 @@
       <div class="hint">Sự kiện chuyển đổi (Lead / generate_lead / SubmitForm) được tự gửi khi khách điền form thành công.</div>
 
       <h3 style="margin:8px 0 0">Thông báo khi có lead mới</h3>
-      <label class="inline" style="font-weight:400"><input type="checkbox" id="i-owners" style="width:auto"> Gửi email cho chủ sở hữu và quản trị viên workspace</label>
+      <label class="inline" style="font-weight:400;white-space:normal"><input type="checkbox" id="i-owners" style="width:auto"> Gửi email cho chủ sở hữu và quản trị viên workspace</label>
       <div><label for="i-emails">Email nhận thêm (tối đa 5, cách nhau bởi dấu phẩy)</label><input id="i-emails" name="notifyEmails" placeholder="sales@congty.vn, ..."></div>
       <div><label for="i-hook">Webhook URL (Zapier, Make, n8n, CRM…)</label><input id="i-hook" name="webhookUrl" placeholder="https://…">
         <div class="hint" id="hook-secret"></div></div>
@@ -212,9 +212,9 @@
           <ol style="margin:6px 0;padding-left:18px">
             <li>Mở Google Sheet → Tiện ích mở rộng → Apps Script, dán đoạn mã dưới đây rồi Lưu.</li>
             <li>Triển khai → Tùy chọn triển khai mới → Loại: Ứng dụng web; Thực thi với tư cách: Tôi; Ai có quyền truy cập: Bất kỳ ai.</li>
-            <li>Sao chép URL dạng <code>https://script.google.com/macros/s/…/exec</code> và dán vào ô trên.</li>
+            <li>Sao chép URL dạng <code style="overflow-wrap:anywhere">https://script.google.com/macros/s/…/exec</code> và dán vào ô trên.</li>
           </ol>
-          <pre style="white-space:pre;overflow:auto;max-height:240px;font-size:12px;background:rgba(127,127,127,.1);padding:8px;border-radius:6px;margin:0"><code>function doPost(e) {
+          <pre style="white-space:pre;overflow:auto;max-width:100%;max-height:240px;font-size:12px;background:rgba(127,127,127,.1);padding:8px;border-radius:6px;margin:0"><code>function doPost(e) {
   var lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
@@ -238,7 +238,7 @@
         </details></div>
 
       <h3 style="margin:8px 0 0">Chống spam &amp; chất lượng lead</h3>
-      <label class="inline" style="font-weight:400"><input type="checkbox" id="i-reqphone" style="width:auto"> Chỉ nhận số điện thoại Việt Nam hợp lệ (tự chuẩn hóa về dạng 0xxxxxxxxx)</label>
+      <label class="inline" style="font-weight:400;white-space:normal"><input type="checkbox" id="i-reqphone" style="width:auto"> Chỉ nhận số điện thoại Việt Nam hợp lệ (tự chuẩn hóa về dạng 0xxxxxxxxx)</label>
       <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
         <div><label for="i-dedupe">Gộp lead trùng SĐT/email trong (giờ)</label><input id="i-dedupe" name="dedupeHours" type="number" min="0" max="168" step="1" placeholder="24">
           <div class="hint">Lead trùng vẫn được lưu nhưng không gửi thông báo lại. 0 = tắt.</div></div>
@@ -385,7 +385,7 @@ async function loadLeads() {
       <tr><td style="white-space:nowrap">${esc(l.createdAt)}<div class="hint">/${l.page === 'index' ? '' : esc(l.page)}</div>${flags.trim() ? `<div>${flags}</div>` : ''}</td>
       <td>${Object.entries(l.data).map(([k, v]) => `<div><span class="muted">${esc(k)}:</span> ${esc(v)}</div>`).join('')}</td>
       <td><span class="badge">${esc(srcText)}</span></td>
-      <td><select data-status="${l.id}" style="width:auto">${Object.entries(LEAD_STATUS).map(([k, v]) => `<option value="${k}" ${k === l.status ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+      <td><select data-status="${l.id}" aria-label="Trạng thái lead #${l.id}" style="width:auto">${Object.entries(LEAD_STATUS).map(([k, v]) => `<option value="${k}" ${k === l.status ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
       <td style="min-width:160px">${l.note ? esc(l.note) : '<span class="muted">—</span>'} <button class="btn btn-ghost btn-sm" data-note="${l.id}" data-current="${esc(l.note)}">Sửa</button></td>
       <td><button class="btn btn-ghost btn-sm" data-lead="${l.id}">Xóa</button></td></tr>`;
     }).join('')

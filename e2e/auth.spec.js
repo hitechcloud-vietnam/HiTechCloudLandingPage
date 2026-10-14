@@ -11,6 +11,7 @@ test.describe('Tài khoản', () => {
     await page.getByLabel('Tên doanh nghiệp / workspace').fill('Công ty E2E');
     await page.getByLabel('Email', { exact: true }).fill(email);
     await page.getByLabel('Mật khẩu', { exact: true }).fill(PASSWORD);
+    await page.locator('#agree').check();
     await page.getByRole('button', { name: 'Đăng ký' }).click();
 
     // Fresh account: dashboard asks to verify the email address.

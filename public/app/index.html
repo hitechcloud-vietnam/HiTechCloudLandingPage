@@ -104,8 +104,8 @@
       <form id="password-form">
         <label>Đổi mật khẩu</label>
         <div class="row">
-          <input name="currentPassword" type="password" placeholder="Mật khẩu hiện tại" autocomplete="current-password" style="flex:1 1 200px" required>
-          <input name="newPassword" type="password" placeholder="Mật khẩu mới (≥ 8 ký tự)" minlength="8" autocomplete="new-password" style="flex:1 1 200px" required>
+          <input name="currentPassword" type="password" placeholder="Mật khẩu hiện tại" aria-label="Mật khẩu hiện tại" autocomplete="current-password" style="flex:1 1 200px" required>
+          <input name="newPassword" type="password" placeholder="Mật khẩu mới (≥ 8 ký tự)" aria-label="Mật khẩu mới" minlength="8" autocomplete="new-password" style="flex:1 1 200px" required>
           <button class="btn btn-ghost" type="submit">Đổi mật khẩu</button>
         </div>
       </form>
@@ -148,8 +148,8 @@
         <label>Xóa tài khoản</label>
         <div class="hint">Xóa vĩnh viễn tài khoản và các workspace bạn sở hữu (website, trang, lead, lịch sử thanh toán). Không thể hoàn tác. Nếu workspace của bạn còn thành viên khác, hãy chuyển quyền sở hữu hoặc xóa thành viên trong tab Thành viên trước.</div>
         <div class="row" style="margin-top:8px">
-          <input name="password" type="password" placeholder="Mật khẩu hiện tại" autocomplete="current-password" style="flex:1 1 200px" required>
-          <input name="confirm" placeholder="Nhập XOA TAI KHOAN để xác nhận" autocomplete="off" style="flex:1 1 200px" required>
+          <input name="password" type="password" placeholder="Mật khẩu hiện tại" aria-label="Mật khẩu hiện tại để xóa tài khoản" autocomplete="current-password" style="flex:1 1 200px" required>
+          <input name="confirm" placeholder="Nhập XOA TAI KHOAN để xác nhận" aria-label="Nhập XOA TAI KHOAN để xác nhận" autocomplete="off" style="flex:1 1 200px" required>
           <button class="btn btn-danger" type="submit">Xóa tài khoản</button>
         </div>
       </form>

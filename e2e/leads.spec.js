@@ -18,6 +18,8 @@ test.describe('Thu lead', () => {
     await form.locator('input[name="name"]').fill('Trần Thị Khách');
     await form.locator('input[name="phone"]').fill('0901234567');
     await form.locator('input[name="email"]').fill('khach@e2e.test');
+    // The lead guard treats forms sent within 2 s of page load as bots.
+    await visitor.waitForTimeout(2500);
     await form.locator('[type="submit"]').click();
     await expect(visitor).toHaveURL(/submitted=1/);
     await expect(visitor.getByText('Cảm ơn bạn! Thông tin đã được gửi thành công.')).toBeVisible();
