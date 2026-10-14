@@ -1,0 +1,23 @@
+{
+	email {$ACME_EMAIL}
+	# Certificates for customer domains and <sub>.PUBLISH_ROOT_DOMAIN are issued on
+	# first request, only for hosts the app confirms it serves.
+	on_demand_tls {
+		ask http://app:3000/_htc/tls-ask
+	}
+}
+
+# Dashboard, editor and API
+{$APP_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}
+
+# Published landing pages (subdomains and verified custom domains)
+https:// {
+	tls {
+		on_demand
+	}
+	encode zstd gzip
+	reverse_proxy app:3000
+}

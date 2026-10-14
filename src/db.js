@@ -156,6 +156,9 @@ function migrate(db) {
   add('workspaces', 'plan_expires_at', 'TEXT');
   add('sites', 'settings_json', "TEXT NOT NULL DEFAULT '{}'");
   add('pages', 'og_image', "TEXT NOT NULL DEFAULT ''");
+  add('sites', 'domain_token', 'TEXT');
+  add('sites', 'domain_verified_at', 'TEXT');
+  add('workspaces', 'expiry_notice', 'TEXT');
 }
 
 // Runs fn inside a transaction, rolling back on error.

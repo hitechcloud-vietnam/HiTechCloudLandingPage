@@ -15,6 +15,8 @@ const config = {
   appUrl: (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, ''),
   // Published sites are served at <subdomain>.<publishRootDomain>, e.g. shop.hitechcloud.site
   publishRootDomain: (process.env.PUBLISH_ROOT_DOMAIN || '').toLowerCase(),
+  // Hostname customers point their CNAME at, e.g. sites.hitechcloud.vn
+  cnameTarget: (process.env.CNAME_TARGET || '').toLowerCase(),
   dbFile: process.env.DB_FILE || path.join(__dirname, '..', 'data', 'hitechcloud.db'),
   uploadsDir: process.env.UPLOADS_DIR || path.join(__dirname, '..', 'data', 'uploads'),
   superAdmins: list(process.env.SUPERADMIN_EMAILS),

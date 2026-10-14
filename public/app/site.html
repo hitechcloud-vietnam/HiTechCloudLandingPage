@@ -59,7 +59,11 @@
         <input id="s-name" name="name" required>
         <label for="s-domain">Tên miền riêng</label>
         <input id="s-domain" name="customDomain" placeholder="vd: khuyenmai.congty.vn">
-        <div class="hint">Trỏ bản ghi CNAME của tên miền về máy chủ HiTechCloud, sau đó nhập tên miền tại đây (gói Pro trở lên).</div>
+        <div class="hint">Gói Pro trở lên. Nhập tên miền, bấm Lưu, sau đó thêm bản ghi DNS theo hướng dẫn bên dưới.</div>
+        <div id="domain-box" class="card" style="margin-top:12px;background:#f8fafc" hidden>
+          <div class="row"><strong id="domain-status"></strong><button class="btn btn-sm" type="button" id="verify-domain">Kiểm tra DNS</button></div>
+          <div id="domain-help" class="hint" style="margin-top:8px"></div>
+        </div>
         <button class="btn" style="margin-top:16px" type="submit">Lưu cài đặt</button>
       </form>
     </div>
@@ -140,6 +144,21 @@ async function load() {
   $('#site-url').textContent = site.custom_domain || url;
   $('#s-name').value = site.name;
   $('#s-domain').value = site.custom_domain || '';
+  const d = site.domain;
+  $('#domain-box').hidden = !d;
+  if (d) {
+    $('#domain-status').innerHTML = d.verified
+      ? `<span class="badge badge-success">Đã xác minh</span> ${esc(d.name)}`
+      : `<span class="badge">Chưa xác minh</span> ${esc(d.name)}`;
+    $('#verify-domain').hidden = d.verified;
+    $('#domain-help').innerHTML = d.verified
+      ? `Trang đang chạy tại <a href="https://${esc(d.name)}" target="_blank" rel="noopener">https://${esc(d.name)}</a>. Chứng chỉ HTTPS được cấp tự động.`
+      : `Thêm <b>một</b> trong hai bản ghi DNS sau tại nhà cung cấp tên miền:<br>
+         ${d.cnameTarget ? `• <code>CNAME</code> &nbsp;<code>${esc(d.name)}</code> → <code>${esc(d.cnameTarget)}</code><br>` : ''}
+         • <code>TXT</code> &nbsp;<code>${esc(d.txtName)}</code> = <code>${esc(d.txtValue)}</code><br>
+         ${d.cnameTarget ? '' : 'và trỏ bản ghi A/CNAME của tên miền về máy chủ HiTechCloud.<br>'}
+         Sau đó bấm “Kiểm tra DNS”.`;
+  }
   $('#export-csv').href = `/api/sites/${siteId}/leads?format=csv`;
   const st = site.settings || {};
   const f = $('#integrations-form');
@@ -218,6 +237,11 @@ $('#settings-form').onsubmit = async (e) => {
   e.preventDefault();
   showError();
   try { await api(`/sites/${siteId}`, { method: 'PATCH', body: formData(e.target) }); await load(); alert('Đã lưu'); } catch (err) { showError(err); }
+};
+
+$('#verify-domain').onclick = async () => {
+  showError();
+  try { await api(`/sites/${siteId}/verify-domain`, { method: 'POST', body: {} }); await load(); } catch (err) { showError(err); }
 };
 
 $('#integrations-form').onsubmit = async (e) => {

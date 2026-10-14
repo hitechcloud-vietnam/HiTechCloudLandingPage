@@ -69,7 +69,7 @@ async function signup(base, email, extra = {}) {
 }
 
 test('SaaS end-to-end flow', async (t) => {
-  const { server, base } = await startServer();
+  const { server, base, db } = await startServer();
   t.after(() => server.close());
 
   const { c, ws } = await signup(base, 'owner@example.com', { workspaceName: 'Công ty ABC' });
@@ -206,6 +206,7 @@ test('SaaS end-to-end flow', async (t) => {
     const patch = await c('PATCH', `/api/sites/${site.id}`, { body: { customDomain: 'Shop.Example.com' } });
     assert.equal(patch.status, 200);
     assert.equal(patch.data.custom_domain, 'shop.example.com');
+    db.prepare("UPDATE sites SET domain_verified_at = datetime('now') WHERE id = ?").run(site.id);
     await c('POST', `/api/pages/${indexPage.id}/publish`, { body: {} });
     const html = (await getWithHost(base, '/', 'shop.example.com')).text;
     assert.match(html, /Bản nháp/);

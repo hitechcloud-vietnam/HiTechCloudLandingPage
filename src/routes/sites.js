@@ -9,7 +9,7 @@ const { parse: parseSettings } = require('../siteSettings');
 
 // Public base URL of a site, used for canonical links and sitemaps.
 function siteBaseUrl(site, config) {
-  if (site.custom_domain) return `https://${site.custom_domain}`;
+  if (site.custom_domain && site.domain_verified_at) return `https://${site.custom_domain}`;
   if (config.publishRootDomain) return `https://${site.subdomain}.${config.publishRootDomain}`;
   return `${config.appUrl}/p/${site.subdomain}`;
 }
@@ -66,7 +66,7 @@ function createSitesRouter({ db, config, access, notifier }) {
   function siteForHost(hostname) {
     const host = String(hostname || '').toLowerCase();
     if (!host) return null;
-    const byDomain = db.prepare('SELECT * FROM sites WHERE custom_domain = ?').get(host);
+    const byDomain = db.prepare('SELECT * FROM sites WHERE custom_domain = ? AND domain_verified_at IS NOT NULL').get(host);
     if (byDomain) return byDomain;
     const root = config.publishRootDomain;
     if (root && host.endsWith(`.${root}`)) {
@@ -75,6 +75,12 @@ function createSitesRouter({ db, config, access, notifier }) {
     }
     return null;
   }
+
+  // Caddy on-demand TLS "ask" hook: only issue certificates for hosts we serve.
+  r.get('/_htc/tls-ask', (req, res) => {
+    const domain = String(req.query.domain || '').toLowerCase();
+    res.status(siteForHost(domain) ? 200 : 404).end();
+  });
 
   // Lead capture endpoint used by every published form (all hosts).
   r.post('/_htc/lead', express.urlencoded({ extended: false, limit: '64kb' }), (req, res) => {
@@ -144,10 +150,24 @@ function createSitesRouter({ db, config, access, notifier }) {
     sendSeoFile(res, site, req.path.split('/').pop());
   });
 
+  // Hosts that belong to customers but cannot be served yet get a 404 page
+  // instead of falling through to the HiTechCloud marketing site.
+  function isCustomerHost(host) {
+    const h = String(host || '').toLowerCase();
+    const root = config.publishRootDomain;
+    if (root && h.endsWith(`.${root}`)) return true;
+    return !!db.prepare('SELECT 1 FROM sites WHERE custom_domain = ?').get(h);
+  }
+
   // Custom domains and <subdomain>.<PUBLISH_ROOT_DOMAIN>.
   r.get(['/', '/:slug'], (req, res, next) => {
     const site = siteForHost(req.hostname);
-    if (!site) return next();
+    if (!site) {
+      if (isCustomerHost(req.hostname)) {
+        return sendHtml(res, renderMessage('404', 'Website không tồn tại hoặc tên miền chưa được xác minh'));
+      }
+      return next();
+    }
     servePublished(req, res, site, req.params.slug, false);
   });
 
