@@ -10,6 +10,7 @@ const { createBilling } = require('./billing');
 const { createMailer } = require('./mailer');
 const { createAccountRouter } = require('./routes/account');
 const { createNotifier } = require('./notify');
+const { createContentRouter } = require('./routes/content');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -21,6 +22,7 @@ function createApp({ db, config }) {
   const sessions = createSessionStore(db, config);
   const access = createAccess(db);
   const appOrigin = new URL(config.appUrl).origin;
+  const uploadsDir = config.uploadsDir || path.join(ROOT, 'data', 'uploads');
 
   const mailer = config.mailer || createMailer(config);
   const billing = createBilling({ db, config, mailer });
@@ -35,6 +37,22 @@ function createApp({ db, config }) {
       res.status(503).json({ ok: false });
     }
   });
+
+  // Uploaded images, served on every host so published pages can use /uploads/… paths.
+  app.use(
+    '/uploads',
+    express.static(uploadsDir, {
+      maxAge: '30d',
+      immutable: true,
+      index: false,
+      fallthrough: false,
+      setHeaders: (res) => {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'");
+        res.setHeader('Access-Control-Allow-Origin', '*');
+      },
+    })
+  );
 
   app.use(sessions.load);
 
@@ -60,7 +78,8 @@ function createApp({ db, config }) {
     if (req.method === 'GET' || req.method === 'HEAD') return next();
     const origin = req.get('origin');
     if (origin && origin !== appOrigin) return res.status(403).json({ error: 'Origin không hợp lệ' });
-    if (['POST', 'PUT', 'PATCH'].includes(req.method) && !req.is('application/json')) {
+    const isImageUpload = /^\/workspaces\/\d+\/assets$/.test(req.path) && req.is('image/*');
+    if (['POST', 'PUT', 'PATCH'].includes(req.method) && !req.is('application/json') && !isImageUpload) {
       return res.status(415).json({ error: 'Yêu cầu phải ở định dạng JSON' });
     }
     next();
@@ -68,6 +87,7 @@ function createApp({ db, config }) {
   app.use('/api', express.json({ limit: '5mb' }));
   app.use('/api', createAccountRouter({ db, config, mailer, sessions }));
   app.use('/api', createApiRouter({ db, sessions, access, billing, mailer, config, notifier }).router);
+  app.use('/api', createContentRouter({ db, config: { ...config, uploadsDir }, access }));
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Không tìm thấy' }));
 
   // Editor vendor assets (GrapesJS + plugins BSD-3-Clause, Font Awesome OFL/MIT).

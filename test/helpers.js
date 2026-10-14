@@ -1,6 +1,9 @@
 'use strict';
 
+const fs = require('node:fs');
 const http = require('node:http');
+const os = require('node:os');
+const path = require('node:path');
 const { openDb } = require('../src/db');
 const { createApp } = require('../src/app');
 const { createMailer } = require('../src/mailer');
@@ -16,6 +19,7 @@ function testConfig(overrides = {}) {
     secureCookies: false,
     mailFrom: 'test@hitechcloud.vn',
     quietMail: true,
+    uploadsDir: fs.mkdtempSync(path.join(os.tmpdir(), 'htc-uploads-')),
     ...overrides,
   };
 }

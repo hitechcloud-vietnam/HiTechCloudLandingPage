@@ -98,7 +98,6 @@
     </form>
 
     <div class="card stack" style="margin-top:16px">
-      <hr style="border:0;border-top:1px solid var(--border)">
       <div class="row">
         <div><strong>Xóa website</strong><div class="muted">Xóa vĩnh viễn toàn bộ trang và dữ liệu khách hàng.</div></div>
         <button class="btn btn-danger" id="delete-site">Xóa website</button>
@@ -170,6 +169,7 @@ async function loadPages() {
         <a class="btn btn-sm" href="/editor?page=${p.id}">Thiết kế</a>
         <a class="btn btn-ghost btn-sm" href="/preview/${p.id}" target="_blank" rel="noopener">Xem trước</a>
         ${p.published_at ? `<button class="btn btn-ghost btn-sm" data-unpublish="${p.id}">Gỡ</button>` : `<button class="btn btn-ghost btn-sm" data-publish="${p.id}">Xuất bản</button>`}
+        <button class="btn btn-ghost btn-sm" data-duplicate="${p.id}">Nhân bản</button>
         ${p.slug === 'index' ? '' : `<button class="btn btn-ghost btn-sm" data-delete="${p.id}">Xóa</button>`}
       </div></td>
     </tr>`).join('');
@@ -196,12 +196,13 @@ document.querySelectorAll('.tabs button').forEach((btn) => {
 });
 
 $('#pages').onclick = async (e) => {
-  const { publish, unpublish, delete: del } = e.target.dataset;
+  const { publish, unpublish, delete: del, duplicate } = e.target.dataset;
   showError();
   try {
     if (publish) await api(`/pages/${publish}/publish`, { method: 'POST', body: {} });
     else if (unpublish) await api(`/pages/${unpublish}/unpublish`, { method: 'POST', body: {} });
     else if (del && confirm('Xóa trang này?')) await api(`/pages/${del}`, { method: 'DELETE' });
+    else if (duplicate) await api(`/pages/${duplicate}/duplicate`, { method: 'POST', body: {} });
     else return;
     await loadPages();
   } catch (err) { showError(err); }

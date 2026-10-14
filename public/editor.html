@@ -29,6 +29,7 @@
     <span class="status" id="status"></span>
   </div>
   <div class="right">
+    <button class="btn btn-ghost btn-sm hide-sm" id="history-btn">Lịch sử</button>
     <button class="btn btn-ghost btn-sm hide-sm" id="seo-btn">SEO</button>
     <a class="btn btn-ghost btn-sm" id="preview" target="_blank" rel="noopener">Xem trước</a>
     <button class="btn btn-sm" id="publish">Xuất bản</button>
@@ -50,6 +51,15 @@
       <button class="btn btn-ghost" type="button" id="seo-cancel">Hủy</button>
       <button class="btn" type="submit">Lưu</button>
     </div>
+  </form>
+</dialog>
+
+<dialog id="history-dialog">
+  <form method="dialog">
+    <h2>Lịch sử xuất bản</h2>
+    <p class="muted">Mỗi lần xuất bản sẽ lưu một phiên bản (giữ 20 bản gần nhất). Khôi phục sẽ thay bản nháp hiện tại, trang đang chạy không đổi cho tới khi bạn xuất bản lại.</p>
+    <div class="table-wrap"><table><tbody id="versions"></tbody></table></div>
+    <div class="dialog-actions"><button class="btn btn-ghost" value="close">Đóng</button></div>
   </form>
 </dialog>
 
@@ -77,6 +87,33 @@
   $('#back').href = `/app/site?id=${page.site.id}`;
   $('#preview').href = `/preview/${page.id}`;
 
+  const assetsUrl = `/api/workspaces/${page.site.workspace_id}/assets`;
+  let assetList = [];
+  try { assetList = (await api(assetsUrl.replace('/api', ''))).assets; } catch {}
+
+  // Uploads each file as a raw image body (see src/routes/content.js).
+  async function uploadFiles(e) {
+    const files = [...((e.dataTransfer && e.dataTransfer.files) || (e.target && e.target.files) || [])];
+    for (const file of files) {
+      setStatus(`Đang tải ${file.name}…`);
+      try {
+        const res = await fetch(assetsUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) },
+          body: file,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
+        editor.AssetManager.add({ src: data.src, name: data.name, type: 'image' });
+        setStatus('Đã tải ảnh lên');
+      } catch (err) {
+        setStatus('');
+        alert(`${file.name}: ${err.message}`);
+      }
+    }
+  }
+
   const editor = grapesjs.init({
     container: '#gjs',
     height: '100%',
@@ -84,6 +121,12 @@
     showOffsets: true,
     cssIcons: '/vendor/font-awesome/css/font-awesome.min.css',
     canvas: { styles: [] },
+    assetManager: {
+      assets: assetList.map((a) => ({ src: a.src, name: a.name, type: 'image' })),
+      uploadFile: uploadFiles,
+      uploadText: 'Kéo thả ảnh vào đây hoặc bấm để chọn (PNG, JPG, GIF, WEBP ≤ 5MB)',
+      addBtnText: 'Thêm ảnh từ URL',
+    },
     deviceManager: {
       devices: [
         { id: 'desktop', name: 'Máy tính', width: '' },
@@ -162,6 +205,26 @@
       btn.disabled = false;
     }
   });
+
+  const history = $('#history-dialog');
+  async function loadVersions() {
+    const versions = await api(`/pages/${page.id}/versions`);
+    $('#versions').innerHTML = versions.length
+      ? versions.map((v, i) => `<tr><td>${HTC.esc(new Date(v.created_at.replace(' ', 'T') + 'Z').toLocaleString('vi-VN'))}${i === 0 ? ' <span class="badge badge-success">Mới nhất</span>' : ''}</td>
+          <td class="muted">${HTC.esc(v.author || '')}</td>
+          <td><button class="btn btn-ghost btn-sm" type="button" data-restore="${v.id}">Khôi phục</button></td></tr>`).join('')
+      : '<tr><td class="muted">Chưa có phiên bản nào. Phiên bản được tạo khi bạn xuất bản.</td></tr>';
+  }
+  $('#history-btn').onclick = async () => { await loadVersions(); history.showModal(); };
+  $('#versions').onclick = async (e) => {
+    const id = e.target.dataset.restore;
+    if (!id || !confirm('Khôi phục phiên bản này vào bản nháp? Thay đổi chưa xuất bản sẽ bị thay thế.')) return;
+    try {
+      await api(`/pages/${page.id}/versions/${id}/restore`, { method: 'POST', body: {} });
+      editor.getModel().set('changesCount', 0);
+      location.reload();
+    } catch (err) { alert(err.message); }
+  };
 
   const seo = $('#seo-dialog');
   $('#seo-btn').onclick = () => {
