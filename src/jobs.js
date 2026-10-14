@@ -43,6 +43,7 @@ function purgeExpired(db) {
   const now = new Date().toISOString();
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
   db.prepare('DELETE FROM password_resets WHERE expires_at < ?').run(now);
+  db.prepare('DELETE FROM email_verifications WHERE expires_at < ?').run(now);
   db.prepare("UPDATE orders SET status = 'cancelled' WHERE status = 'pending' AND created_at < datetime('now', '-1 day')").run();
 }
 

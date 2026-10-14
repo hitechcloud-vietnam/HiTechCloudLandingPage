@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { startServer, client } = require('./helpers');
+const { startServer, client, verifyEmail } = require('./helpers');
 const { confidence } = require('../src/routes/abtests');
 
 test('confidence of a two-proportion test', () => {
@@ -18,6 +18,7 @@ test('A/B testing: split traffic, sticky buckets, stats, promote winner', async 
 
   const c = client(base);
   await c('POST', '/api/auth/signup', { name: 'Chủ', email: 'owner@example.com', password: 'matkhau123' });
+  verifyEmail(db, 'owner@example.com');
   const wsId = (await c('GET', '/api/auth/me')).data.workspaces[0].id;
   const site = (await c('POST', `/api/workspaces/${wsId}/sites`, { name: 'Shop', subdomain: 'shop', template: 'blank' })).data;
   const control = (await c('GET', `/api/sites/${site.id}/pages`)).data[0];

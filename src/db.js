@@ -97,6 +97,13 @@ CREATE TABLE IF NOT EXISTS password_resets (
   used_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS email_verifications (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL,
+  used_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS invitations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -178,7 +185,9 @@ function migrate(db) {
   const hasColumn = (table, column) =>
     db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
   const add = (table, column, ddl) => {
-    if (!hasColumn(table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+    if (hasColumn(table, column)) return false;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+    return true;
   };
   add('workspaces', 'plan_expires_at', 'TEXT');
   add('sites', 'settings_json', "TEXT NOT NULL DEFAULT '{}'");
@@ -195,6 +204,8 @@ function migrate(db) {
   add('leads', 'ab_bucket', 'TEXT');
   add('ab_tests', 'views_a', 'INTEGER NOT NULL DEFAULT 0');
   add('ab_tests', 'views_b', 'INTEGER NOT NULL DEFAULT 0');
+  // Accounts created before email verification existed count as verified.
+  if (add('users', 'email_verified_at', 'TEXT')) db.exec('UPDATE users SET email_verified_at = created_at');
 }
 
 // Runs fn inside a transaction, rolling back on error.

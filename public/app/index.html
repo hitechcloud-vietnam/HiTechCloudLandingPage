@@ -38,6 +38,13 @@
   </div>
 
   <div class="alert" id="error"></div>
+  <div class="alert alert-info" id="verify-notice"></div>
+  <div class="alert" id="verify-banner" style="background:#fef3c7;color:#92400e" hidden>
+    <div class="row">
+      <span id="verify-text">Vui lòng xác minh email <strong id="verify-email"></strong> để xuất bản trang và nâng cấp gói dịch vụ. Hãy kiểm tra hộp thư của bạn.</span>
+      <button class="btn btn-ghost btn-sm" id="verify-resend" type="button">Gửi lại email xác minh</button>
+    </div>
+  </div>
 
   <section data-panel="sites"><div class="grid" id="sites"></div></section>
 
@@ -121,6 +128,25 @@
       </div>
       <div class="table-wrap"><table><thead><tr><th>Tên</th><th>Key</th><th>Tạo bởi</th><th>Dùng lần cuối</th><th>Trạng thái</th><th></th></tr></thead><tbody id="api-keys"></tbody></table></div>
     </div>
+    <div class="card stack" style="margin-top:16px">
+      <div>
+        <h3 style="margin:0">Quyền dữ liệu cá nhân</h3>
+        <p class="muted" style="margin:4px 0 0">Theo Nghị định 13/2023/NĐ-CP, bạn có quyền nhận bản sao và yêu cầu xóa dữ liệu cá nhân của mình.</p>
+      </div>
+      <div>
+        <a class="btn btn-ghost" href="/api/auth/export" download>Tải dữ liệu của tôi</a>
+        <div class="hint">Tệp JSON gồm hồ sơ, các workspace bạn tham gia và toàn bộ website, trang, lead, đơn hàng của workspace bạn sở hữu.</div>
+      </div>
+      <form id="delete-account-form">
+        <label>Xóa tài khoản</label>
+        <div class="hint">Xóa vĩnh viễn tài khoản và các workspace bạn sở hữu (website, trang, lead, lịch sử thanh toán). Không thể hoàn tác. Nếu workspace của bạn còn thành viên khác, hãy chuyển quyền sở hữu hoặc xóa thành viên trong tab Thành viên trước.</div>
+        <div class="row" style="margin-top:8px">
+          <input name="password" type="password" placeholder="Mật khẩu hiện tại" autocomplete="current-password" style="flex:1 1 200px" required>
+          <input name="confirm" placeholder="Nhập XOA TAI KHOAN để xác nhận" autocomplete="off" style="flex:1 1 200px" required>
+          <button class="btn btn-danger" type="submit">Xóa tài khoản</button>
+        </div>
+      </form>
+    </div>
   </section>
 </main>
 
@@ -162,6 +188,8 @@ async function load() {
   $('#user-name').textContent = me.user.name;
   $('#admin-link').hidden = !me.user.isSuperAdmin;
   $('#profile-name').value = me.user.name;
+  $('#verify-banner').hidden = me.user.emailVerified;
+  $('#verify-email').textContent = me.user.email;
   const current = HTC.currentWorkspace(me.workspaces);
   $('#ws-select').innerHTML = me.workspaces
     .map((w) => `<option value="${w.id}" ${w.id === current.id ? 'selected' : ''}>${esc(w.name)}</option>`)
@@ -221,7 +249,7 @@ async function loadMembers() {
   $('#member-form').hidden = !canManage;
   $('#members').innerHTML = members.map((m) => `
     <tr><td>${esc(m.name)}</td><td>${esc(m.email)}</td><td>${ROLE_LABEL[m.role]}</td>
-    <td>${canManage && m.role !== 'owner' ? `<button class="btn btn-ghost btn-sm" data-remove="${m.id}">Xóa</button>` : ''}</td></tr>`).join('');
+    <td>${ws.role === 'owner' && m.role !== 'owner' ? `<button class="btn btn-ghost btn-sm" data-transfer="${m.id}" data-name="${esc(m.name)}">Chuyển quyền sở hữu</button> ` : ''}${canManage && m.role !== 'owner' ? `<button class="btn btn-ghost btn-sm" data-remove="${m.id}">Xóa</button>` : ''}</td></tr>`).join('');
   $('#invites-wrap').hidden = !invites.length;
   $('#invites').innerHTML = invites.map((i) => `
     <tr><td>${esc(i.email)}</td><td>${ROLE_LABEL[i.role]}</td><td>${new Date(i.expires_at).toLocaleDateString('vi-VN')}</td>
@@ -316,6 +344,13 @@ $('#member-form').onsubmit = async (e) => {
 };
 
 $('#members').onclick = async (e) => {
+  const { transfer, name } = e.target.dataset;
+  if (transfer) {
+    if (!confirm(`Chuyển quyền sở hữu workspace "${ws.name}" cho ${name}? Bạn sẽ trở thành quản trị viên.`)) return;
+    showError();
+    try { await api(`/workspaces/${ws.id}/transfer`, { method: 'POST', body: { userId: Number(transfer) } }); await load(); } catch (err) { showError(err); }
+    return;
+  }
   const id = e.target.dataset.remove;
   if (!id || !confirm('Xóa thành viên này khỏi workspace?')) return;
   try { await api(`/workspaces/${ws.id}/members/${id}`, { method: 'DELETE' }); await loadWorkspace(ws.id); } catch (err) { showError(err); }
@@ -395,6 +430,35 @@ $('#ws-form').onsubmit = async (e) => {
   try { await api(`/workspaces/${ws.id}`, { method: 'PATCH', body: formData(e.target) }); await load(); } catch (err) { showError(err); }
 };
 
+$('#verify-resend').onclick = async (e) => {
+  e.target.disabled = true;
+  try {
+    await api('/auth/resend-verification', { method: 'POST', body: {} });
+    $('#verify-text').textContent = `Đã gửi lại email xác minh tới ${me.user.email}. Liên kết có hiệu lực trong 24 giờ.`;
+  } catch (err) { showError(err); e.target.disabled = false; }
+};
+
+$('#delete-account-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  if (!confirm('Xóa vĩnh viễn tài khoản và toàn bộ dữ liệu của các workspace bạn sở hữu? Thao tác này không thể hoàn tác.')) return;
+  try {
+    await api('/auth/delete-account', { method: 'POST', body: formData(e.target) });
+    alert('Tài khoản của bạn đã được xóa.');
+    location.href = '/';
+  } catch (err) { showError(err); }
+};
+
+// Result of clicking the verification link (/api/auth/verify redirects here).
+function showVerifyResult() {
+  const v = params.get('verified');
+  if (v === null) return;
+  if (v === '1' || me.user.emailVerified) $('#verify-notice').textContent = 'Đã xác minh email. Bạn có thể xuất bản trang và nâng cấp gói dịch vụ.';
+  else showError(new Error('Liên kết xác minh không hợp lệ hoặc đã hết hạn. Hãy bấm "Gửi lại email xác minh".'));
+  params.delete('verified');
+  history.replaceState(null, '', location.pathname + (params.size ? `?${params}` : ''));
+}
+
 $('#ws-new-form').onsubmit = async (e) => {
   e.preventDefault();
   try {
@@ -428,7 +492,7 @@ $('#site-form').onsubmit = async (e) => {
   } catch (err) { $('#site-error').textContent = err.message; }
 };
 
-load().catch(showError);
+load().then(showVerifyResult).catch(showError);
 </script>
 </body>
 </html>

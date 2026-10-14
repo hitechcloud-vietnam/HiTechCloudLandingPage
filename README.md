@@ -25,6 +25,7 @@ Lõi trình thiết kế dùng [GrapesJS](https://github.com/GrapesJS/grapesjs).
 | Thư viện ảnh | Tải ảnh PNG/JPEG/GIF/WEBP vào editor. Kiểm tra định dạng bằng nội dung file. Dung lượng theo gói: 50 MB / 2 GB / 10 GB |
 | Lịch sử phiên bản | Tự lưu một phiên bản mỗi lần xuất bản (giữ 20 bản gần nhất), khôi phục về bản nháp. Có nhân bản trang |
 | Tài khoản | Quên/đặt lại mật khẩu qua email, mời thành viên qua email, đổi mật khẩu, giới hạn số lần đăng nhập sai |
+| Xác minh email & quyền dữ liệu | Xác minh email khi đăng ký (bắt buộc trước khi xuất bản trang hoặc thanh toán). Tải toàn bộ dữ liệu cá nhân (JSON), tự xóa tài khoản, chuyển quyền sở hữu workspace. Xem [Quyền dữ liệu cá nhân](#quyền-dữ-liệu-cá-nhân-nghị-định-132023) |
 | Tên miền riêng | Xác minh quyền sở hữu bằng bản ghi DNS TXT gắn với từng website. Chỉ tên miền đã xác minh, thuộc workspace còn gói trả phí, mới được phục vụ và cấp HTTPS. Yêu cầu gắn tên miền chưa xác minh quá 72 giờ sẽ được giải phóng cho website khác |
 | Vận hành | `docker-compose` kèm Caddy tự cấp HTTPS (kể cả tên miền của khách), `/healthz`, email nhắc gia hạn trước 7 ngày và 1 ngày, `npm run backup`, CI trên GitHub Actions |
 | Bảo mật | Mật khẩu băm scrypt, session lưu trong DB (cookie httpOnly, SameSite=Lax), chống CSRF (kiểm tra Origin và bắt buộc body JSON), trang khách hàng phục vụ trên domain dashboard được cô lập bằng `CSP: sandbox` |
@@ -166,7 +167,7 @@ src/
   render.js          Render HTML trang đã xuất bản, chuyển hướng form về endpoint thu lead
   routes/api.js      REST API cho dashboard và editor
   routes/sites.js    Phục vụ trang đã xuất bản (theo host hoặc /p/), xem trước, thu lead, sitemap, TLS ask
-  routes/account.js  Quên mật khẩu, lời mời, đổi mật khẩu
+  routes/account.js  Quên mật khẩu, lời mời, đổi mật khẩu, xác minh email, xuất/xóa dữ liệu cá nhân
   routes/content.js  Thư viện ảnh, lịch sử phiên bản, nhân bản trang
   storage.js         Lưu ảnh tải lên: đĩa cục bộ hoặc S3-compatible (ký AWS SigV4)
   routes/abtests.js  A/B testing (chia lưu lượng, thống kê, chọn phiên bản thắng)
@@ -214,6 +215,9 @@ test/                Test API bằng node:test
 | PATCH | `/api/v1/leads/:id` | API công khai: cập nhật `{status, note}` của lead |
 | POST | `/api/v1/pages/:id/publish` | API công khai: xuất bản trang |
 | GET | `/api/sites/:id/analytics?days=7\|30\|90` | Thống kê: chuỗi theo ngày, tổng và so sánh kỳ trước, theo trang, nguồn, trạng thái |
+| GET/POST | `/api/auth/verify?token=`, `/api/auth/resend-verification` | Xác minh email (link trong email, gửi lại) |
+| GET/POST | `/api/auth/export`, `/api/auth/delete-account` | Tải dữ liệu cá nhân, xóa tài khoản `{password, confirm: "XOA TAI KHOAN"}` |
+| POST | `/api/workspaces/:id/transfer` | Chuyển quyền sở hữu `{userId}` (chỉ chủ sở hữu) |
 
 ## API công khai
 
@@ -243,6 +247,15 @@ curl -X PATCH -H "Authorization: Bearer $HTC_KEY" -H "Content-Type: application/
 # Xuất bản trang
 curl -X POST -H "Authorization: Bearer $HTC_KEY" $HTC_URL/api/v1/pages/7/publish
 ```
+
+## Quyền dữ liệu cá nhân (Nghị định 13/2023)
+
+Hỗ trợ các quyền của chủ thể dữ liệu theo Nghị định 13/2023/NĐ-CP về bảo vệ dữ liệu cá nhân. Người dùng thao tác trong **Cài đặt** của dashboard:
+
+- **Xác minh email:** khi đăng ký, hệ thống gửi một liên kết dùng một lần, hiệu lực 24 giờ (token chỉ lưu dạng băm SHA-256). Chưa xác minh vẫn dùng được ứng dụng nhưng không xuất bản trang và không thanh toán được. Có thể gửi lại email, tối đa 3 lần/giờ. Nhận lời mời qua email cũng được tính là đã xác minh. Tài khoản tạo trước khi có tính năng này được coi là đã xác minh.
+- **Tải dữ liệu của tôi:** tệp JSON gồm hồ sơ, danh sách workspace tham gia và vai trò. Với workspace bạn sở hữu, tệp có thêm website, trang (HTML/CSS), lead và đơn hàng. Tệp không chứa mật khẩu băm, token, khóa tích hợp (như Telegram bot token) hay thông tin của thành viên khác.
+- **Xóa tài khoản:** cần nhập mật khẩu và gõ `XOA TAI KHOAN`. Hệ thống xóa vĩnh viễn tài khoản, session và các workspace bạn sở hữu (kèm website, trang, lead, đơn hàng), sau đó gửi email xác nhận. Nếu bạn còn sở hữu workspace có thành viên khác thì phải chuyển quyền sở hữu hoặc xóa các thành viên trước.
+- **Chuyển quyền sở hữu:** chủ sở hữu chuyển workspace cho một quản trị viên hoặc biên tập viên hiện có (tab **Thành viên**). Chủ sở hữu cũ trở thành quản trị viên.
 
 ## Lộ trình tiếp theo
 

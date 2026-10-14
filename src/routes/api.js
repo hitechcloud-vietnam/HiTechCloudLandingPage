@@ -7,7 +7,7 @@ const { hashPassword, verifyPassword, requireUser } = require('../auth');
 const { HttpError } = require('../access');
 const { addMonths } = require('../billing');
 const { createRateLimiter } = require('../ratelimit');
-const { acceptInvitation, createInvitation } = require('./account');
+const { acceptInvitation, createInvitation, sendVerificationEmail, isEmailVerified, assertEmailVerified } = require('./account');
 const siteSettings = require('../siteSettings');
 const { snapshotVersion } = require('./content');
 const { assertNotInRunningTest } = require('./abtests');
@@ -74,7 +74,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   r.get('/billing/providers', h(() => billing.providers()));
 
   // ---------- Auth ----------
-  r.post('/auth/signup', h((req, res) => {
+  r.post('/auth/signup', ha(async (req, res) => {
     if (!signupLimiter(req.ip)) throw new HttpError(429, 'Bạn thao tác quá nhanh, vui lòng thử lại sau');
     const name = str(req.body.name, { required: true, field: 'Họ tên', max: 100 });
     const email = str(req.body.email, { required: true, field: 'Email', max: 200 }).toLowerCase();
@@ -112,6 +112,8 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
         db.prepare('INSERT INTO memberships (workspace_id, user_id, role) VALUES (?, ?, ?)').run(w.lastInsertRowid, userId, 'owner');
       }
     }
+    // Accepting an emailed invitation already verifies the address.
+    if (!workspaceId) await sendVerificationEmail(db, { mailer, config }, { id: userId, email, name });
     sessions.create(res, userId);
     res.status(201);
     return { ok: true, workspaceId };
@@ -137,7 +139,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   r.use(requireUser);
 
   r.get('/auth/me', h((req) => ({
-    user: req.user,
+    user: { ...req.user, emailVerified: isEmailVerified(db, req.user.id) },
     workspaces: db
       .prepare(
         `SELECT w.id, w.name, w.plan, w.plan_expires_at, m.role FROM memberships m
@@ -184,6 +186,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   // ---------- Billing ----------
   r.post('/workspaces/:wid/checkout', ha(async (req) => {
     const { ws } = access.workspace(req.user, req.params.wid, 'admin');
+    assertEmailVerified(db, req.user.id, 'thanh toán nâng cấp gói');
     return billing.checkout({ ws, user: req.user, plan: req.body.plan, months: req.body.months, provider: req.body.provider });
   }));
 
@@ -554,6 +557,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
 
   r.post('/pages/:pid/publish', h((req) => {
     const { page } = access.page(req.user, req.params.pid);
+    assertEmailVerified(db, req.user.id, 'xuất bản trang');
     snapshotVersion(db, page.id, req.user.id);
     db.prepare("UPDATE pages SET published_html = draft_html, published_css = draft_css, published_at = datetime('now') WHERE id = ?").run(page.id);
     return { ok: true, publishedAt: db.prepare('SELECT published_at FROM pages WHERE id = ?').get(page.id).published_at };
