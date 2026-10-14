@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quên mật khẩu · HiTechCloud LandingPage</title>
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <a class="brand" href="/">HiTech<span>Cloud</span></a>
+    <h1>Quên mật khẩu</h1>
+    <p class="muted">Nhập email đăng ký, chúng tôi sẽ gửi liên kết đặt lại mật khẩu.</p>
+    <div class="alert" id="error"></div>
+    <div class="alert alert-info" id="done"></div>
+    <form id="form">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="email" required>
+      <button class="btn" style="width:100%;margin-top:20px" type="submit">Gửi liên kết</button>
+    </form>
+    <p class="muted"><a href="/app/login">← Quay lại đăng nhập</a></p>
+  </div>
+</div>
+<script src="/assets/api.js"></script>
+<script>
+  HTC.$('#form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    HTC.$('#error').textContent = '';
+    try {
+      await HTC.api('/auth/forgot', { method: 'POST', body: HTC.formData(e.target) });
+      HTC.$('#done').textContent = 'Nếu email tồn tại trong hệ thống, liên kết đặt lại mật khẩu đã được gửi. Vui lòng kiểm tra hộp thư.';
+      e.target.hidden = true;
+    } catch (err) {
+      HTC.$('#error').textContent = err.message;
+    }
+  });
+</script>
+</body>
+</html>

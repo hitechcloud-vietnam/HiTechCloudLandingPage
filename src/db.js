@@ -90,6 +90,61 @@ CREATE TABLE IF NOT EXISTS page_views (
   PRIMARY KEY (page_id, day)
 );
 
+CREATE TABLE IF NOT EXISTS password_resets (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL,
+  used_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS invitations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('admin', 'editor')),
+  token_hash TEXT NOT NULL UNIQUE,
+  invited_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  expires_at TEXT NOT NULL,
+  accepted_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (workspace_id, email)
+);
+
+CREATE TABLE IF NOT EXISTS assets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  path TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS page_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+  html TEXT NOT NULL,
+  css TEXT NOT NULL,
+  project_json TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ab_tests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+  variant_page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+  split INTEGER NOT NULL CHECK (split BETWEEN 1 AND 99),
+  status TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'stopped')),
+  winner TEXT,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  stopped_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_ab_page ON ab_tests(page_id, status);
+CREATE INDEX IF NOT EXISTS idx_assets_workspace ON assets(workspace_id, id);
+CREATE INDEX IF NOT EXISTS idx_versions_page ON page_versions(page_id, id);
 CREATE INDEX IF NOT EXISTS idx_orders_workspace ON orders(workspace_id, id);
 CREATE INDEX IF NOT EXISTS idx_leads_site ON leads(site_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
@@ -108,9 +163,24 @@ function openDb(file) {
 function migrate(db) {
   const hasColumn = (table, column) =>
     db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
-  if (!hasColumn('workspaces', 'plan_expires_at')) {
-    db.exec('ALTER TABLE workspaces ADD COLUMN plan_expires_at TEXT');
-  }
+  const add = (table, column, ddl) => {
+    if (!hasColumn(table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+  };
+  add('workspaces', 'plan_expires_at', 'TEXT');
+  add('sites', 'settings_json', "TEXT NOT NULL DEFAULT '{}'");
+  add('pages', 'og_image', "TEXT NOT NULL DEFAULT ''");
+  add('sites', 'domain_token', 'TEXT');
+  add('sites', 'domain_verified_at', 'TEXT');
+  add('sites', 'domain_claimed_at', 'TEXT');
+  add('workspaces', 'expiry_notice', 'TEXT');
+  add('leads', 'status', "TEXT NOT NULL DEFAULT 'new'");
+  add('leads', 'note', "TEXT NOT NULL DEFAULT ''");
+  add('leads', 'source_json', "TEXT NOT NULL DEFAULT '{}'");
+  add('leads', 'page_id', 'INTEGER');
+  add('leads', 'ab_test_id', 'INTEGER');
+  add('leads', 'ab_bucket', 'TEXT');
+  add('ab_tests', 'views_a', 'INTEGER NOT NULL DEFAULT 0');
+  add('ab_tests', 'views_b', 'INTEGER NOT NULL DEFAULT 0');
 }
 
 // Runs fn inside a transaction, rolling back on error.

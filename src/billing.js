@@ -21,9 +21,14 @@ function createProviders(config) {
   return providers;
 }
 
+// Adds calendar months, clamping to the month's last day (31 Jan + 1 = 28/29 Feb).
 function addMonths(date, months) {
   const d = new Date(date);
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
   d.setUTCMonth(d.getUTCMonth() + months);
+  const lastDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, lastDay));
   return d;
 }
 
@@ -32,7 +37,21 @@ function newOrderCode() {
   return String(Date.now() * 1000 + crypto.randomInt(1000));
 }
 
-function createBilling({ db, config }) {
+// Expiry after paying for `order`:
+//  - same plan, still active: stacks onto the remaining time;
+//  - switching between paid plans: the unused time of the old plan is
+//    converted to the new plan by price and added on top;
+//  - otherwise: starts now.
+function newExpiry(ws, currentPlan, order, now) {
+  const end = addMonths(now, order.months);
+  const remainingMs = ws.plan_expires_at ? new Date(ws.plan_expires_at) - now : 0;
+  if (currentPlan === 'free' || remainingMs <= 0) return end;
+  if (currentPlan === order.plan) return addMonths(new Date(ws.plan_expires_at), order.months);
+  const credit = remainingMs * (PLANS[currentPlan].priceVnd / PLANS[order.plan].priceVnd);
+  return new Date(end.getTime() + Math.floor(credit));
+}
+
+function createBilling({ db, config, mailer }) {
   const providers = createProviders(config);
 
   function getOrderByCode(provider, code) {
@@ -44,7 +63,7 @@ function createBilling({ db, config }) {
     if (amount !== undefined && Number(amount) !== order.amount) {
       throw new Error(`Số tiền không khớp cho đơn ${order.order_code}`);
     }
-    return transaction(db, () => {
+    const changed = transaction(db, () => {
       const fresh = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id);
       if (fresh.status === 'paid') return false;
       db.prepare("UPDATE orders SET status = 'paid', paid_at = datetime('now'), provider_ref = COALESCE(?, provider_ref) WHERE id = ?").run(ref || null, order.id);
@@ -52,15 +71,30 @@ function createBilling({ db, config }) {
       const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(order.workspace_id);
       if (!ws) return true;
       const now = new Date();
-      // Renewing the same active plan stacks onto the remaining time.
-      const stillActive = effectivePlanId(ws, now) === order.plan && ws.plan_expires_at && new Date(ws.plan_expires_at) > now;
-      const start = stillActive ? new Date(ws.plan_expires_at) : now;
-      db.prepare('UPDATE workspaces SET plan = ?, plan_expires_at = ? WHERE id = ?').run(
-        order.plan,
-        addMonths(start, order.months).toISOString(),
-        ws.id
-      );
+      const current = effectivePlanId(ws, now);
+      // A paid plan granted without expiry by a platform admin is never shortened.
+      if (current === order.plan && !ws.plan_expires_at) return true;
+      db.prepare('UPDATE workspaces SET plan = ?, plan_expires_at = ? WHERE id = ?').run(order.plan, newExpiry(ws, current, order, now).toISOString(), ws.id);
       return true;
+    });
+    if (changed) sendReceipt(order.id);
+    return changed;
+  }
+
+  function sendReceipt(orderId) {
+    if (!mailer) return;
+    const o = db
+      .prepare(
+        `SELECT o.*, u.email, u.name, w.name AS ws_name, w.plan_expires_at FROM orders o
+         LEFT JOIN users u ON u.id = o.user_id LEFT JOIN workspaces w ON w.id = o.workspace_id WHERE o.id = ?`
+      )
+      .get(orderId);
+    if (!o || !o.email) return;
+    const expires = o.plan_expires_at ? new Date(o.plan_expires_at).toLocaleDateString('vi-VN') : '';
+    mailer.send({
+      to: o.email,
+      subject: `Xác nhận thanh toán đơn #${o.id} – HiTechCloud`,
+      text: `Chào ${o.name},\n\nChúng tôi đã nhận ${o.amount.toLocaleString('vi-VN')}đ qua ${o.provider} cho gói ${PLANS[o.plan].name} (${o.months} tháng) của workspace "${o.ws_name}".\nGói có hiệu lực đến ${expires}.\n\nQuản lý gói: ${config.appUrl}/app/?tab=billing\nCảm ơn bạn đã sử dụng HiTechCloud!`,
     });
   }
 
@@ -168,4 +202,4 @@ function createBilling({ db, config }) {
   };
 }
 
-module.exports = { createBilling, addMonths };
+module.exports = { createBilling, addMonths, newExpiry };

@@ -15,10 +15,16 @@ const config = {
   appUrl: (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, ''),
   // Published sites are served at <subdomain>.<publishRootDomain>, e.g. shop.hitechcloud.site
   publishRootDomain: (process.env.PUBLISH_ROOT_DOMAIN || '').toLowerCase(),
+  // Hostname customers point their CNAME at, e.g. sites.hitechcloud.vn
+  cnameTarget: (process.env.CNAME_TARGET || '').toLowerCase(),
   dbFile: process.env.DB_FILE || path.join(__dirname, '..', 'data', 'hitechcloud.db'),
+  uploadsDir: process.env.UPLOADS_DIR || path.join(__dirname, '..', 'data', 'uploads'),
   superAdmins: list(process.env.SUPERADMIN_EMAILS),
   sessionDays: Number(process.env.SESSION_DAYS || 30),
   secureCookies: process.env.NODE_ENV === 'production',
+  // smtp(s)://user:pass@host:port — leave empty to log emails to stdout.
+  smtpUrl: process.env.SMTP_URL || '',
+  mailFrom: process.env.MAIL_FROM || 'HiTechCloud <no-reply@hitechcloud.vn>',
   payments: {
     payos: {
       clientId: process.env.PAYOS_CLIENT_ID,

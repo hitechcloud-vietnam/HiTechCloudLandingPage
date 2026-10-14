@@ -10,7 +10,8 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/server.js",
     "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
-    "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\""
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\"",
+    "backup": "node --disable-warning=ExperimentalWarning scripts/backup.js"
   },
   "repository": {
     "type": "git",
@@ -23,6 +24,7 @@
     "font-awesome": "4.7.0",
     "grapesjs": "0.23.6",
     "grapesjs-blocks-basic": "^1.0.2",
-    "grapesjs-plugin-forms": "^2.0.6"
+    "grapesjs-plugin-forms": "^2.0.6",
+    "nodemailer": "^10.1.1"
   }
 }

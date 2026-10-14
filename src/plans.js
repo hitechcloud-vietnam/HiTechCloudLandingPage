@@ -10,8 +10,11 @@ const PLANS = {
     maxPagesPerSite: 3,
     maxMembers: 1,
     maxLeadsPerMonth: 100,
+    storageMb: 50,
     customDomain: false,
     removeBranding: false,
+    customCode: false,
+    abTesting: false,
   },
   pro: {
     id: 'pro',
@@ -21,8 +24,11 @@ const PLANS = {
     maxPagesPerSite: 50,
     maxMembers: 5,
     maxLeadsPerMonth: 10000,
+    storageMb: 2048,
     customDomain: true,
     removeBranding: true,
+    customCode: true,
+    abTesting: true,
   },
   business: {
     id: 'business',
@@ -32,8 +38,11 @@ const PLANS = {
     maxPagesPerSite: Infinity,
     maxMembers: 50,
     maxLeadsPerMonth: Infinity,
+    storageMb: 10240,
     customDomain: true,
     removeBranding: true,
+    customCode: true,
+    abTesting: true,
   },
 };
 
@@ -55,6 +64,12 @@ function workspacePlan(ws) {
   return getPlan(effectivePlanId(ws));
 }
 
+// Effective plan of a workspace by id (expiry-aware).
+function workspacePlanById(db, workspaceId) {
+  const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(workspaceId);
+  return ws ? workspacePlan(ws) : getPlan('free');
+}
+
 function priceFor(planId, months) {
   const plan = PLANS[planId];
   const factor = BILLING_CYCLES[months];
@@ -69,4 +84,4 @@ function publicPlan(plan) {
   );
 }
 
-module.exports = { PLANS, BILLING_CYCLES, getPlan, effectivePlanId, workspacePlan, priceFor, publicPlan };
+module.exports = { PLANS, BILLING_CYCLES, getPlan, effectivePlanId, workspacePlan, workspacePlanById, priceFor, publicPlan };

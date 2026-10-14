@@ -5,7 +5,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY src ./src
 COPY public ./public
-ENV DB_FILE=/data/hitechcloud.db PORT=3000
+COPY scripts ./scripts
+ENV DB_FILE=/data/hitechcloud.db UPLOADS_DIR=/data/uploads PORT=3000
 RUN mkdir -p /data && chown node:node /data
 VOLUME ["/data"]
 EXPOSE 3000

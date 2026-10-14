@@ -29,6 +29,7 @@
   <div class="tabs" role="tablist">
     <button class="active" data-tab="pages">Trang</button>
     <button data-tab="leads">Khách hàng tiềm năng</button>
+    <button data-tab="abtests">A/B testing</button>
     <button data-tab="settings">Cài đặt</button>
   </div>
 
@@ -42,14 +43,35 @@
   </section>
 
   <section data-panel="leads" hidden>
+    <form class="row" id="lead-filters" style="margin-bottom:12px;justify-content:flex-start">
+      <input name="q" placeholder="Tìm tên, SĐT, ghi chú…" style="flex:1 1 200px;width:auto">
+      <select name="status" style="width:auto"><option value="">Tất cả trạng thái</option></select>
+      <label class="inline" style="font-weight:400">Từ <input type="date" name="from" style="width:auto"></label>
+      <label class="inline" style="font-weight:400">Đến <input type="date" name="to" style="width:auto"></label>
+      <button class="btn btn-ghost btn-sm" type="submit">Lọc</button>
+    </form>
     <div class="row" style="margin-bottom:12px">
       <span class="muted" id="lead-count"></span>
       <a class="btn btn-ghost btn-sm" id="export-csv">Xuất CSV</a>
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Thời gian</th><th>Trang</th><th>Dữ liệu</th><th></th></tr></thead>
+      <thead><tr><th>Thời gian</th><th>Thông tin</th><th>Nguồn</th><th>Trạng thái</th><th>Ghi chú</th><th></th></tr></thead>
       <tbody id="leads"></tbody>
     </table></div>
+  </section>
+
+  <section data-panel="abtests" hidden>
+    <form class="card stack" id="ab-form">
+      <h3 style="margin:0">Tạo thử nghiệm mới <span class="badge badge-primary">Pro</span></h3>
+      <p class="muted" style="margin:0">Khách vào trang gốc sẽ được chia ngẫu nhiên sang trang biến thể theo tỉ lệ bạn chọn (mỗi khách luôn thấy cùng một phiên bản). Mẹo: dùng “Nhân bản” để tạo biến thể rồi chỉnh sửa và xuất bản.</p>
+      <div class="row" style="justify-content:flex-start;align-items:flex-end">
+        <div style="flex:1 1 200px"><label for="ab-a">Trang gốc (A)</label><select id="ab-a" name="pageId"></select></div>
+        <div style="flex:1 1 200px"><label for="ab-b">Biến thể (B)</label><select id="ab-b" name="variantPageId"></select></div>
+        <div style="flex:0 1 160px"><label for="ab-split">% khách sang B: <span id="ab-split-val">50</span>%</label><input id="ab-split" name="split" type="range" min="5" max="95" step="5" value="50"></div>
+        <button class="btn" type="submit">Bắt đầu</button>
+      </div>
+    </form>
+    <div id="ab-list" class="stack" style="margin-top:16px"></div>
   </section>
 
   <section data-panel="settings" hidden>
@@ -59,10 +81,49 @@
         <input id="s-name" name="name" required>
         <label for="s-domain">Tên miền riêng</label>
         <input id="s-domain" name="customDomain" placeholder="vd: khuyenmai.congty.vn">
-        <div class="hint">Trỏ bản ghi CNAME của tên miền về máy chủ HiTechCloud, sau đó nhập tên miền tại đây (gói Pro trở lên).</div>
+        <div class="hint">Gói Pro trở lên. Nhập tên miền, bấm Lưu, sau đó thêm bản ghi DNS theo hướng dẫn bên dưới.</div>
+        <div id="domain-box" class="card" style="margin-top:12px;background:#f8fafc" hidden>
+          <div class="row"><strong id="domain-status"></strong><button class="btn btn-sm" type="button" id="verify-domain">Kiểm tra DNS</button></div>
+          <div id="domain-help" class="hint" style="margin-top:8px"></div>
+        </div>
         <button class="btn" style="margin-top:16px" type="submit">Lưu cài đặt</button>
       </form>
-      <hr style="border:0;border-top:1px solid var(--border)">
+    </div>
+
+    <form class="card stack" id="integrations-form" style="margin-top:16px">
+      <h3 style="margin:0">Theo dõi &amp; quảng cáo</h3>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
+        <div><label for="i-ga4">Google Analytics 4</label><input id="i-ga4" name="ga4Id" placeholder="G-XXXXXXXXXX"></div>
+        <div><label for="i-gtm">Google Tag Manager</label><input id="i-gtm" name="gtmId" placeholder="GTM-XXXXXX"></div>
+        <div><label for="i-fb">Facebook Pixel ID</label><input id="i-fb" name="fbPixelId" placeholder="123456789012345"></div>
+        <div><label for="i-tt">TikTok Pixel ID</label><input id="i-tt" name="tiktokPixelId" placeholder="CXXXXXXXXXXXX"></div>
+      </div>
+      <div><label for="i-fav">Favicon (URL https)</label><input id="i-fav" name="faviconUrl" placeholder="https://…/favicon.png"></div>
+      <div class="hint">Sự kiện chuyển đổi (Lead / generate_lead / SubmitForm) được tự gửi khi khách điền form thành công.</div>
+
+      <h3 style="margin:8px 0 0">Thông báo khi có lead mới</h3>
+      <label class="inline" style="font-weight:400"><input type="checkbox" id="i-owners" style="width:auto"> Gửi email cho chủ sở hữu và quản trị viên workspace</label>
+      <div><label for="i-emails">Email nhận thêm (tối đa 5, cách nhau bởi dấu phẩy)</label><input id="i-emails" name="notifyEmails" placeholder="sales@congty.vn, ..."></div>
+      <div><label for="i-hook">Webhook URL (Zapier, Make, n8n, CRM…)</label><input id="i-hook" name="webhookUrl" placeholder="https://…">
+        <div class="hint" id="hook-secret"></div></div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
+        <div><label for="i-tgtoken">Telegram bot token</label><input id="i-tgtoken" name="telegramBotToken" autocomplete="off">
+          <div class="hint" id="tg-hint">Tạo bot qua @BotFather.</div></div>
+        <div><label for="i-tgchat">Telegram chat ID</label><input id="i-tgchat" name="telegramChatId" placeholder="-100… hoặc @kenh"></div>
+      </div>
+
+      <h3 style="margin:8px 0 0">Mã tùy chỉnh <span class="badge badge-primary">Pro</span></h3>
+      <div><label for="i-head">Chèn vào &lt;head&gt;</label><textarea id="i-head" name="customHead" rows="3" placeholder="&lt;script&gt;…&lt;/script&gt;" style="font-family:monospace"></textarea></div>
+      <div><label for="i-body">Chèn cuối &lt;body&gt; (chat widget, Zalo OA…)</label><textarea id="i-body" name="customBody" rows="3" style="font-family:monospace"></textarea></div>
+
+      <div class="row" style="justify-content:flex-start">
+        <button class="btn" type="submit">Lưu tích hợp</button>
+        <button class="btn btn-ghost" type="button" id="notify-test">Gửi thông báo thử</button>
+        <span class="muted" id="integrations-status"></span>
+      </div>
+    </form>
+
+    <div class="card stack" style="margin-top:16px">
       <div class="row">
         <div><strong>Xóa website</strong><div class="muted">Xóa vĩnh viễn toàn bộ trang và dữ liệu khách hàng.</div></div>
         <button class="btn btn-danger" id="delete-site">Xóa website</button>
@@ -105,8 +166,33 @@ async function load() {
   $('#site-url').textContent = site.custom_domain || url;
   $('#s-name').value = site.name;
   $('#s-domain').value = site.custom_domain || '';
-  $('#export-csv').href = `/api/sites/${siteId}/leads?format=csv`;
-  await Promise.all([loadPages(), loadLeads()]);
+  const d = site.domain;
+  $('#domain-box').hidden = !d;
+  if (d) {
+    $('#domain-status').innerHTML = d.verified
+      ? `<span class="badge badge-success">Đã xác minh</span> ${esc(d.name)}`
+      : `<span class="badge">Chưa xác minh</span> ${esc(d.name)}`;
+    $('#verify-domain').hidden = d.verified;
+    $('#domain-help').innerHTML = d.verified
+      ? `Trang đang chạy tại <a href="https://${esc(d.name)}" target="_blank" rel="noopener">https://${esc(d.name)}</a>. Chứng chỉ HTTPS được cấp tự động.`
+      : `Thêm các bản ghi DNS sau tại nhà cung cấp tên miền:<br>
+         1. Xác minh quyền sở hữu: <code>TXT</code> &nbsp;<code>${esc(d.txtName)}</code> = <code>${esc(d.txtValue)}</code><br>
+         2. Trỏ tên miền về HiTechCloud: ${d.cnameTarget ? `<code>CNAME</code> &nbsp;<code>${esc(d.name)}</code> → <code>${esc(d.cnameTarget)}</code>` : 'bản ghi A/CNAME về máy chủ HiTechCloud'}<br>
+         Sau đó bấm “Kiểm tra DNS”. Nếu không xác minh trong 72 giờ, website khác có thể nhận tên miền này.`;
+  }
+  const st = site.settings || {};
+  const f = $('#integrations-form');
+  for (const name of ['ga4Id', 'gtmId', 'fbPixelId', 'tiktokPixelId', 'faviconUrl', 'webhookUrl', 'telegramChatId', 'customHead', 'customBody']) {
+    f.elements[name].value = st[name] || '';
+  }
+  f.elements.notifyEmails.value = (st.notifyEmails || []).join(', ');
+  f.elements.telegramBotToken.value = '';
+  f.elements.telegramBotToken.placeholder = st.hasTelegramToken ? '•••••• (đã lưu, để trống để giữ nguyên, nhập - để xóa)' : '123456:ABC…';
+  $('#i-owners').checked = st.notifyOwners !== false;
+  $('#hook-secret').textContent = st.webhookSecret ? `Chữ ký: header X-HTC-Signature = sha256=HMAC_SHA256(body, "${st.webhookSecret}")` : '';
+  const canAdmin = site.role !== 'editor';
+  f.querySelectorAll('input, textarea, button').forEach((el) => { el.disabled = !canAdmin; });
+  await Promise.all([loadPages(), loadLeads(), loadAbTests()]);
 }
 
 async function loadPages() {
@@ -122,21 +208,91 @@ async function loadPages() {
         <a class="btn btn-sm" href="/editor?page=${p.id}">Thiết kế</a>
         <a class="btn btn-ghost btn-sm" href="/preview/${p.id}" target="_blank" rel="noopener">Xem trước</a>
         ${p.published_at ? `<button class="btn btn-ghost btn-sm" data-unpublish="${p.id}">Gỡ</button>` : `<button class="btn btn-ghost btn-sm" data-publish="${p.id}">Xuất bản</button>`}
+        <button class="btn btn-ghost btn-sm" data-duplicate="${p.id}">Nhân bản</button>
         ${p.slug === 'index' ? '' : `<button class="btn btn-ghost btn-sm" data-delete="${p.id}">Xóa</button>`}
       </div></td>
     </tr>`).join('');
 }
 
+const LEAD_STATUS = { new: 'Mới', contacted: 'Đã liên hệ', qualified: 'Tiềm năng', won: 'Thành công', lost: 'Thất bại' };
+const LEAD_BADGE = { new: 'badge-primary', contacted: '', qualified: '', won: 'badge-success', lost: 'badge-danger' };
+$('#lead-filters').elements.status.innerHTML += Object.entries(LEAD_STATUS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+
 async function loadLeads() {
-  const leads = await api(`/sites/${siteId}/leads`);
-  $('#lead-count').textContent = `${leads.length} lượt đăng ký`;
+  const qs = new URLSearchParams(Object.entries(formData($('#lead-filters'))).filter(([, v]) => v)).toString();
+  $('#export-csv').href = `/api/sites/${siteId}/leads?format=csv${qs ? `&${qs}` : ''}`;
+  const leads = await api(`/sites/${siteId}/leads${qs ? `?${qs}` : ''}`);
+  $('#lead-count').textContent = `${leads.length} khách hàng`;
   $('#leads').innerHTML = leads.length
-    ? leads.map((l) => `
-      <tr><td style="white-space:nowrap">${esc(l.createdAt)}</td><td>${esc(l.page)}</td>
+    ? leads.map((l) => {
+      const src = l.source || {};
+      const srcText = [src.utm_source, src.utm_medium, src.utm_campaign].filter(Boolean).join(' / ')
+        || (src.ref ? (() => { try { return new URL(src.ref).hostname; } catch { return ''; } })() : '') || 'Trực tiếp';
+      return `
+      <tr><td style="white-space:nowrap">${esc(l.createdAt)}<div class="hint">/${l.page === 'index' ? '' : esc(l.page)}</div></td>
       <td>${Object.entries(l.data).map(([k, v]) => `<div><span class="muted">${esc(k)}:</span> ${esc(v)}</div>`).join('')}</td>
-      <td><button class="btn btn-ghost btn-sm" data-lead="${l.id}">Xóa</button></td></tr>`).join('')
-    : '<tr><td colspan="4" class="muted">Chưa có dữ liệu. Mọi biểu mẫu trên trang đã xuất bản sẽ tự động gửi về đây.</td></tr>';
+      <td><span class="badge">${esc(srcText)}</span></td>
+      <td><select data-status="${l.id}" style="width:auto">${Object.entries(LEAD_STATUS).map(([k, v]) => `<option value="${k}" ${k === l.status ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+      <td style="min-width:160px">${l.note ? esc(l.note) : '<span class="muted">—</span>'} <button class="btn btn-ghost btn-sm" data-note="${l.id}" data-current="${esc(l.note)}">Sửa</button></td>
+      <td><button class="btn btn-ghost btn-sm" data-lead="${l.id}">Xóa</button></td></tr>`;
+    }).join('')
+    : '<tr><td colspan="6" class="muted">Chưa có dữ liệu. Mọi biểu mẫu trên trang đã xuất bản sẽ tự động gửi về đây.</td></tr>';
 }
+
+async function loadAbTests() {
+  const [pages, tests] = await Promise.all([api(`/sites/${siteId}/pages`), api(`/sites/${siteId}/ab-tests`)]);
+  const published = pages.filter((p) => p.published_at);
+  const opts = published.map((p) => `<option value="${p.id}">${esc(p.title)} (/${p.slug === 'index' ? '' : esc(p.slug)})</option>`).join('');
+  $('#ab-a').innerHTML = opts;
+  $('#ab-b').innerHTML = opts;
+  if (published[1]) $('#ab-b').value = published[1].id;
+  const row = (label, page, st, best) => `<tr ${best ? 'style="background:#f0fdf4"' : ''}><td><b>${label}</b> ${esc(page.title || '')}</td><td>${st.views.toLocaleString('vi-VN')}</td><td>${st.leads}</td><td><b>${st.rate}%</b></td></tr>`;
+  $('#ab-list').innerHTML = tests.length
+    ? tests.map((t) => {
+      const { a, b, confidence } = t.stats;
+      const leader = b.rate > a.rate ? 'b' : a.rate > b.rate ? 'a' : '';
+      const verdict = confidence >= 95
+        ? `<span class="badge badge-success">Có ý nghĩa thống kê (${confidence}%)</span> Phiên bản ${leader.toUpperCase()} đang tốt hơn.`
+        : `<span class="badge">Độ tin cậy ${confidence}%</span> Chưa đủ dữ liệu để kết luận (cần ≥ 95%).`;
+      return `<div class="card stack">
+        <div class="row"><strong>/${t.control.slug === 'index' ? '' : esc(t.control.slug)} · chia ${100 - t.split}/${t.split}</strong>
+          ${t.status === 'running' ? '<span class="badge badge-primary">Đang chạy</span>' : `<span class="badge">Đã dừng${t.winner ? ` · thắng: ${t.winner.toUpperCase()}` : ''}</span>`}</div>
+        <div class="table-wrap"><table><thead><tr><th>Phiên bản</th><th>Lượt xem</th><th>Lead</th><th>Chuyển đổi</th></tr></thead>
+        <tbody>${row('A', t.control, a, leader === 'a')}${row('B', t.variant, b, leader === 'b')}</tbody></table></div>
+        <div class="muted">${verdict}</div>
+        ${t.status === 'running' ? `<div class="row" style="justify-content:flex-start">
+          <button class="btn btn-sm" data-ab-stop="${t.id}" data-winner="b">Chọn B làm trang chính</button>
+          <button class="btn btn-ghost btn-sm" data-ab-stop="${t.id}" data-winner="a">Giữ A, dừng thử nghiệm</button></div>` : ''}
+      </div>`;
+    }).join('')
+    : '<div class="card muted">Chưa có thử nghiệm nào.</div>';
+}
+
+$('#ab-split').oninput = (e) => { $('#ab-split-val').textContent = e.target.value; };
+$('#ab-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  const body = formData(e.target);
+  try {
+    await api(`/sites/${siteId}/ab-tests`, { method: 'POST', body: { pageId: Number(body.pageId), variantPageId: Number(body.variantPageId), split: Number(body.split) } });
+    await loadAbTests();
+  } catch (err) { showError(err); }
+};
+$('#ab-list').onclick = async (e) => {
+  const id = e.target.dataset.abStop;
+  if (!id) return;
+  const w = e.target.dataset.winner;
+  if (!confirm(w === 'b' ? 'Nội dung trang B sẽ thay thế trang gốc. Tiếp tục?' : 'Dừng thử nghiệm và giữ trang A?')) return;
+  try { await api(`/ab-tests/${id}/stop`, { method: 'POST', body: { winner: w } }); await Promise.all([loadAbTests(), loadPages()]); } catch (err) { showError(err); }
+};
+
+$('#lead-filters').onsubmit = (e) => { e.preventDefault(); loadLeads().catch(showError); };
+
+$('#leads').onchange = async (e) => {
+  const id = e.target.dataset.status;
+  if (!id) return;
+  try { await api(`/leads/${id}`, { method: 'PATCH', body: { status: e.target.value } }); } catch (err) { showError(err); }
+};
 
 $('#logout').onclick = HTC.logout;
 
@@ -148,18 +304,25 @@ document.querySelectorAll('.tabs button').forEach((btn) => {
 });
 
 $('#pages').onclick = async (e) => {
-  const { publish, unpublish, delete: del } = e.target.dataset;
+  const { publish, unpublish, delete: del, duplicate } = e.target.dataset;
   showError();
   try {
     if (publish) await api(`/pages/${publish}/publish`, { method: 'POST', body: {} });
     else if (unpublish) await api(`/pages/${unpublish}/unpublish`, { method: 'POST', body: {} });
     else if (del && confirm('Xóa trang này?')) await api(`/pages/${del}`, { method: 'DELETE' });
+    else if (duplicate) await api(`/pages/${duplicate}/duplicate`, { method: 'POST', body: {} });
     else return;
     await loadPages();
   } catch (err) { showError(err); }
 };
 
 $('#leads').onclick = async (e) => {
+  if (e.target.dataset.note) {
+    const note = prompt('Ghi chú', e.target.dataset.current || '');
+    if (note === null) return;
+    try { await api(`/leads/${e.target.dataset.note}`, { method: 'PATCH', body: { note } }); await loadLeads(); } catch (err) { showError(err); }
+    return;
+  }
   const id = e.target.dataset.lead;
   if (!id || !confirm('Xóa dữ liệu này?')) return;
   try { await api(`/leads/${id}`, { method: 'DELETE' }); await loadLeads(); } catch (err) { showError(err); }
@@ -169,6 +332,33 @@ $('#settings-form').onsubmit = async (e) => {
   e.preventDefault();
   showError();
   try { await api(`/sites/${siteId}`, { method: 'PATCH', body: formData(e.target) }); await load(); alert('Đã lưu'); } catch (err) { showError(err); }
+};
+
+$('#verify-domain').onclick = async () => {
+  showError();
+  try { await api(`/sites/${siteId}/verify-domain`, { method: 'POST', body: {} }); await load(); } catch (err) { showError(err); }
+};
+
+$('#integrations-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  try {
+    const body = { ...formData(e.target), notifyOwners: $('#i-owners').checked };
+    site = { ...site, ...(await api(`/sites/${siteId}/settings`, { method: 'PATCH', body })) };
+    $('#integrations-status').textContent = 'Đã lưu';
+    await load();
+  } catch (err) { showError(err); window.scrollTo(0, 0); }
+};
+
+$('#notify-test').onclick = async () => {
+  $('#integrations-status').textContent = 'Đang gửi…';
+  try {
+    const r = await api(`/sites/${siteId}/notify-test`, { method: 'POST', body: {} });
+    const names = { email: 'Email', webhook: 'Webhook', telegram: 'Telegram' };
+    $('#integrations-status').textContent = Object.keys(r).length
+      ? Object.entries(r).map(([k, v]) => `${names[k]}: ${v === 'ok' ? '✓' : v}`).join(' · ')
+      : 'Chưa cấu hình kênh nào';
+  } catch (err) { showError(err); }
 };
 
 $('#delete-site').onclick = async () => {

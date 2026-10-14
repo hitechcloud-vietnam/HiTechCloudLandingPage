@@ -90,7 +90,7 @@ test('billing with payOS and Pay2S', async (t) => {
   const gw = createGatewayMock();
   const db = openDb(':memory:');
   const config = {
-    appUrl: APP_URL, publishRootDomain: '', superAdmins: ['root@hitechcloud.vn'], sessionDays: 1, secureCookies: false,
+    appUrl: APP_URL, publishRootDomain: '', superAdmins: ['root@hitechcloud.vn'], sessionDays: 1, secureCookies: false, quietMail: true,
     payments: { payos: PAYOS, pay2s: PAY2S }, fetch: gw.fetch,
   };
   const server = createApp({ db, config }).listen(0);
@@ -240,6 +240,13 @@ test('billing with payOS and Pay2S', async (t) => {
     assert.equal(grant.status, 200);
     const w = (await root('GET', '/api/admin/workspaces')).data.find((x) => x.id === wsId);
     assert.equal(w.effectivePlan, 'business');
+
+    // Indefinite admin grant is not shortened by a payment for the same plan.
+    await root('POST', `/api/workspaces/${wsId}/plan`, { plan: 'business', months: '' });
+    await c('POST', `/api/workspaces/${wsId}/checkout`, { plan: 'business', months: 1, provider: 'payos' });
+    await webhook('payos', payosWebhook(Object.values(gw.state.payos).at(-1)));
+    assert.equal(wsRow().plan, 'business');
+    assert.equal(wsRow().plan_expires_at, null);
   });
 });
 
@@ -251,4 +258,22 @@ test('payOS signature matches the official SDK algorithm', () => {
     payosLib.signPaymentRequest({ amount: 1000, cancelUrl: 'c', description: 'd', orderCode: 1, returnUrl: 'r' }, 'k'),
     require('node:crypto').createHmac('sha256', 'k').update('amount=1000&cancelUrl=c&description=d&orderCode=1&returnUrl=r').digest('hex')
   );
+});
+
+test('plan changes keep paid time', () => {
+  const { newExpiry } = require('../src/billing');
+  const now = new Date('2026-01-01T00:00:00Z');
+  const days = (d) => (d - now) / 86400_000;
+  const in30 = new Date('2026-01-31T00:00:00Z').toISOString();
+  // Free -> Pro: starts now.
+  assert.equal(Math.round(days(newExpiry({ plan_expires_at: null }, 'free', { plan: 'pro', months: 1 }, now))), 31);
+  // Renewing Pro with 30 days left: stacks (31 Jan + 1 month = 28 Feb).
+  assert.equal(newExpiry({ plan_expires_at: in30 }, 'pro', { plan: 'pro', months: 1 }, now).toISOString().slice(0, 10), '2026-02-28');
+  const { addMonths } = require('../src/billing');
+  assert.equal(addMonths(new Date('2027-12-31T05:00:00Z'), 2).toISOString(), '2028-02-29T05:00:00.000Z');
+  assert.equal(addMonths(new Date('2026-03-15T00:00:00Z'), 12).toISOString(), '2027-03-15T00:00:00.000Z');
+  // Pro (30 days left, 199k) -> Business (599k): credit ≈ 30 * 199/599 ≈ 10 days.
+  assert.equal(Math.round(days(newExpiry({ plan_expires_at: in30 }, 'pro', { plan: 'business', months: 1 }, now))), 31 + 10);
+  // Business (30 days left) -> Pro: credit ≈ 90 days.
+  assert.equal(Math.round(days(newExpiry({ plan_expires_at: in30 }, 'business', { plan: 'pro', months: 1 }, now))), 31 + 90);
 });

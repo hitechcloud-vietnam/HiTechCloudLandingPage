@@ -30,11 +30,15 @@
 </div>
 <script src="/assets/api.js"></script>
 <script>
+  const params = new URLSearchParams(location.search);
+  if (params.get('email')) HTC.$('#email').value = params.get('email');
+  if (params.get('invite')) HTC.$('#workspaceName').closest('form').querySelectorAll('[for=workspaceName], #workspaceName').forEach((el) => { el.hidden = true; });
   HTC.$('#form').addEventListener('submit', async (e) => {
     e.preventDefault();
     HTC.$('#error').textContent = '';
     try {
-      await HTC.api('/auth/signup', { method: 'POST', body: HTC.formData(e.target) });
+      const res = await HTC.api('/auth/signup', { method: 'POST', body: { ...HTC.formData(e.target), inviteToken: params.get('invite') || undefined } });
+      if (res.workspaceId) HTC.setWorkspace(res.workspaceId);
       location.href = '/app/';
     } catch (err) {
       HTC.$('#error').textContent = err.message;

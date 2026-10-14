@@ -50,6 +50,10 @@
         <button class="btn" type="submit">Thêm</button>
       </form>
       <div class="table-wrap"><table><thead><tr><th>Tên</th><th>Email</th><th>Vai trò</th><th></th></tr></thead><tbody id="members"></tbody></table></div>
+      <div id="invites-wrap" hidden>
+        <h3 style="margin:8px 0">Lời mời đang chờ</h3>
+        <div class="table-wrap"><table><thead><tr><th>Email</th><th>Vai trò</th><th>Hết hạn</th><th></th></tr></thead><tbody id="invites"></tbody></table></div>
+      </div>
     </div>
   </section>
 
@@ -78,6 +82,18 @@
       <form id="ws-form">
         <label for="ws-rename">Tên workspace</label>
         <div class="row"><input id="ws-rename" name="name" style="flex:1" required><button class="btn" type="submit">Lưu</button></div>
+      </form>
+      <form id="profile-form">
+        <label for="profile-name">Họ tên của bạn</label>
+        <div class="row"><input id="profile-name" name="name" style="flex:1" required><button class="btn btn-ghost" type="submit">Lưu</button></div>
+      </form>
+      <form id="password-form">
+        <label>Đổi mật khẩu</label>
+        <div class="row">
+          <input name="currentPassword" type="password" placeholder="Mật khẩu hiện tại" autocomplete="current-password" style="flex:1 1 200px" required>
+          <input name="newPassword" type="password" placeholder="Mật khẩu mới (≥ 8 ký tự)" minlength="8" autocomplete="new-password" style="flex:1 1 200px" required>
+          <button class="btn btn-ghost" type="submit">Đổi mật khẩu</button>
+        </div>
       </form>
       <form id="ws-new-form">
         <label for="ws-new">Tạo workspace mới (cho khách hàng/dự án khác)</label>
@@ -124,6 +140,7 @@ async function load() {
   me = await api('/auth/me');
   $('#user-name').textContent = me.user.name;
   $('#admin-link').hidden = !me.user.isSuperAdmin;
+  $('#profile-name').value = me.user.name;
   const current = HTC.currentWorkspace(me.workspaces);
   $('#ws-select').innerHTML = me.workspaces
     .map((w) => `<option value="${w.id}" ${w.id === current.id ? 'selected' : ''}>${esc(w.name)}</option>`)
@@ -161,12 +178,16 @@ async function loadSites() {
 }
 
 async function loadMembers() {
-  const members = await api(`/workspaces/${ws.id}/members`);
+  const [members, invites] = await Promise.all([api(`/workspaces/${ws.id}/members`), api(`/workspaces/${ws.id}/invitations`)]);
   const canManage = ws.role === 'owner' || ws.role === 'admin';
   $('#member-form').hidden = !canManage;
   $('#members').innerHTML = members.map((m) => `
     <tr><td>${esc(m.name)}</td><td>${esc(m.email)}</td><td>${ROLE_LABEL[m.role]}</td>
     <td>${canManage && m.role !== 'owner' ? `<button class="btn btn-ghost btn-sm" data-remove="${m.id}">Xóa</button>` : ''}</td></tr>`).join('');
+  $('#invites-wrap').hidden = !invites.length;
+  $('#invites').innerHTML = invites.map((i) => `
+    <tr><td>${esc(i.email)}</td><td>${ROLE_LABEL[i.role]}</td><td>${new Date(i.expires_at).toLocaleDateString('vi-VN')}</td>
+    <td>${canManage ? `<button class="btn btn-ghost btn-sm" data-revoke="${i.id}">Thu hồi</button>` : ''}</td></tr>`).join('');
 }
 
 async function loadPlans() {
@@ -248,7 +269,8 @@ $('#member-form').onsubmit = async (e) => {
   e.preventDefault();
   showError();
   try {
-    await api(`/workspaces/${ws.id}/members`, { method: 'POST', body: formData(e.target) });
+    const res = await api(`/workspaces/${ws.id}/members`, { method: 'POST', body: formData(e.target) });
+    if (res.status === 'invited') alert('Đã gửi email mời. Người được mời cần nhận lời mời để tham gia.');
     e.target.reset();
     await loadWorkspace(ws.id);
   } catch (err) { showError(err); }
@@ -278,6 +300,23 @@ $('#plans').onclick = async (e) => {
       await loadWorkspace(ws.id);
     }
   } catch (err) { showError(err); e.target.disabled = false; }
+};
+
+$('#invites').onclick = async (e) => {
+  const id = e.target.dataset.revoke;
+  if (!id) return;
+  try { await api(`/workspaces/${ws.id}/invitations/${id}`, { method: 'DELETE' }); await loadMembers(); } catch (err) { showError(err); }
+};
+
+$('#profile-form').onsubmit = async (e) => {
+  e.preventDefault();
+  try { await api('/auth/me', { method: 'PATCH', body: formData(e.target) }); await load(); } catch (err) { showError(err); }
+};
+
+$('#password-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  try { await api('/auth/change-password', { method: 'POST', body: formData(e.target) }); e.target.reset(); alert('Đã đổi mật khẩu'); } catch (err) { showError(err); }
 };
 
 $('#ws-form').onsubmit = async (e) => {

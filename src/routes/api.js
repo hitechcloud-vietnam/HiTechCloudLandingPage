@@ -1,11 +1,19 @@
 'use strict';
 
 const express = require('express');
+const { handler } = require('../http');
+const { monthStart, leadsThisMonth } = require('../usage');
 const { hashPassword, verifyPassword, requireUser } = require('../auth');
 const { HttpError } = require('../access');
 const { addMonths } = require('../billing');
+const { createRateLimiter } = require('../ratelimit');
+const { acceptInvitation, createInvitation } = require('./account');
+const siteSettings = require('../siteSettings');
+const { snapshotVersion } = require('./content');
+const { assertNotInRunningTest } = require('./abtests');
+const { createDomainVerifier, newDomainToken, CLAIM_TTL_HOURS } = require('../domains');
 const { transaction } = require('../db');
-const { PLANS, workspacePlan, effectivePlanId, publicPlan } = require('../plans');
+const { PLANS, workspacePlan, workspacePlanById, effectivePlanId, publicPlan } = require('../plans');
 const { renderTemplate, listTemplates, listBlocks, BASE_CSS } = require('../templates');
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -32,10 +40,6 @@ function isUniqueViolation(err) {
   return /UNIQUE constraint failed/.test(String(err && err.message));
 }
 
-function monthStart() {
-  const d = new Date();
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString().slice(0, 19).replace('T', ' ');
-}
 
 function csvCell(value) {
   let s = String(value ?? '');
@@ -44,38 +48,22 @@ function csvCell(value) {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
-function createApiRouter({ db, sessions, access, billing }) {
+function createApiRouter({ db, sessions, access, billing, mailer, config, notifier }) {
   const r = express.Router();
+  const domains = createDomainVerifier(config);
+  const loginLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 10 });
+  const signupLimiter = createRateLimiter({ windowMs: 3600_000, max: 10 });
 
   // Wrap handlers so thrown HttpErrors become JSON responses.
-  const h = (fn) => (req, res, next) => {
-    try {
-      const out = fn(req, res);
-      if (out !== undefined && !res.headersSent) res.json(out);
-    } catch (err) {
-      next(err);
-    }
-  };
+  const h = handler;
 
-  const ha = (fn) => (req, res, next) => {
-    Promise.resolve()
-      .then(() => fn(req, res))
-      .then((out) => {
-        if (out !== undefined && !res.headersSent) res.json(out);
-      })
-      .catch(next);
-  };
+  const ha = handler;
 
   function usage(workspaceId) {
     return {
       sites: db.prepare('SELECT COUNT(*) AS n FROM sites WHERE workspace_id = ?').get(workspaceId).n,
       members: db.prepare('SELECT COUNT(*) AS n FROM memberships WHERE workspace_id = ?').get(workspaceId).n,
-      leadsThisMonth: db
-        .prepare(
-          `SELECT COUNT(*) AS n FROM leads l JOIN sites s ON s.id = l.site_id
-           WHERE s.workspace_id = ? AND l.created_at >= ?`
-        )
-        .get(workspaceId, monthStart()).n,
+      leadsThisMonth: leadsThisMonth(db, workspaceId),
     };
   }
 
@@ -87,10 +75,12 @@ function createApiRouter({ db, sessions, access, billing }) {
 
   // ---------- Auth ----------
   r.post('/auth/signup', h((req, res) => {
+    if (!signupLimiter(req.ip)) throw new HttpError(429, 'Bạn thao tác quá nhanh, vui lòng thử lại sau');
     const name = str(req.body.name, { required: true, field: 'Họ tên', max: 100 });
     const email = str(req.body.email, { required: true, field: 'Email', max: 200 }).toLowerCase();
     const password = typeof req.body.password === 'string' ? req.body.password : '';
     const workspaceName = str(req.body.workspaceName, { field: 'Tên workspace', max: 100 }) || `Workspace của ${name}`;
+    const inviteToken = typeof req.body.inviteToken === 'string' ? req.body.inviteToken : '';
     if (!EMAIL_RE.test(email)) throw new HttpError(400, 'Email không hợp lệ');
     if (password.length < 8 || password.length > 200) throw new HttpError(400, 'Mật khẩu cần ít nhất 8 ký tự');
 
@@ -100,26 +90,37 @@ function createApiRouter({ db, sessions, access, billing }) {
         const u = db
           .prepare('INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)')
           .run(email, name, hashPassword(password));
-        const w = db.prepare('INSERT INTO workspaces (name) VALUES (?)').run(workspaceName);
-        db.prepare('INSERT INTO memberships (workspace_id, user_id, role) VALUES (?, ?, ?)').run(
-          w.lastInsertRowid,
-          u.lastInsertRowid,
-          'owner'
-        );
-        return Number(u.lastInsertRowid);
+        const id = Number(u.lastInsertRowid);
+        // Invited users join the inviter's workspace instead of getting their own.
+        if (!inviteToken) {
+          const w = db.prepare('INSERT INTO workspaces (name) VALUES (?)').run(workspaceName);
+          db.prepare('INSERT INTO memberships (workspace_id, user_id, role) VALUES (?, ?, ?)').run(w.lastInsertRowid, id, 'owner');
+        }
+        return id;
       });
     } catch (err) {
       if (isUniqueViolation(err)) throw new HttpError(409, 'Email đã được đăng ký');
       throw err;
     }
+    let workspaceId = null;
+    if (inviteToken) {
+      try {
+        workspaceId = acceptInvitation(db, inviteToken, { id: userId, email });
+      } catch {
+        // Invalid/expired invite: fall back to a personal workspace.
+        const w = db.prepare('INSERT INTO workspaces (name) VALUES (?)').run(workspaceName);
+        db.prepare('INSERT INTO memberships (workspace_id, user_id, role) VALUES (?, ?, ?)').run(w.lastInsertRowid, userId, 'owner');
+      }
+    }
     sessions.create(res, userId);
     res.status(201);
-    return { ok: true };
+    return { ok: true, workspaceId };
   }));
 
   r.post('/auth/login', h((req, res) => {
     const email = str(req.body.email, { max: 200 }).toLowerCase();
     const password = typeof req.body.password === 'string' ? req.body.password : '';
+    if (!loginLimiter(`${req.ip}:${email}`)) throw new HttpError(429, 'Đăng nhập sai quá nhiều lần, vui lòng thử lại sau 15 phút');
     const user = db.prepare('SELECT id, password_hash FROM users WHERE email = ?').get(email);
     if (!user || !verifyPassword(password, user.password_hash)) {
       throw new HttpError(401, 'Email hoặc mật khẩu không đúng');
@@ -263,25 +264,55 @@ function createApiRouter({ db, sessions, access, billing }) {
       .all(ws.id);
   }));
 
-  r.post('/workspaces/:wid/members', h((req, res) => {
+  r.get('/workspaces/:wid/invitations', h((req) => {
+    const { ws } = access.workspace(req.user, req.params.wid);
+    return db
+      .prepare('SELECT id, email, role, expires_at, created_at FROM invitations WHERE workspace_id = ? AND accepted_at IS NULL AND expires_at > ? ORDER BY id DESC')
+      .all(ws.id, new Date().toISOString());
+  }));
+
+  r.delete('/workspaces/:wid/invitations/:iid', h((req) => {
+    const { ws } = access.workspace(req.user, req.params.wid, 'admin');
+    db.prepare('DELETE FROM invitations WHERE id = ? AND workspace_id = ?').run(req.params.iid, ws.id);
+    return { ok: true };
+  }));
+
+  r.post('/workspaces/:wid/members', ha(async (req, res) => {
     const { ws, role: myRole } = access.workspace(req.user, req.params.wid, 'admin');
     const email = str(req.body.email, { required: true, field: 'Email' }).toLowerCase();
+    if (!EMAIL_RE.test(email)) throw new HttpError(400, 'Email không hợp lệ');
     const role = req.body.role === 'admin' ? 'admin' : 'editor';
     if (role === 'admin' && myRole !== 'owner') throw new HttpError(403, 'Chỉ chủ sở hữu mới thêm được quản trị viên');
     const plan = workspacePlan(ws);
-    if (usage(ws.id).members >= plan.maxMembers) {
+    const pending = db
+      .prepare('SELECT COUNT(*) AS n FROM invitations WHERE workspace_id = ? AND accepted_at IS NULL AND expires_at > ? AND email != ?')
+      .get(ws.id, new Date().toISOString(), email).n;
+    if (usage(ws.id).members + pending >= plan.maxMembers) {
       throw new HttpError(402, `Gói ${plan.name} cho phép tối đa ${plan.maxMembers} thành viên`);
     }
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-    if (!user) throw new HttpError(404, 'Người dùng chưa có tài khoản HiTechCloud');
-    try {
-      db.prepare('INSERT INTO memberships (workspace_id, user_id, role) VALUES (?, ?, ?)').run(ws.id, user.id, role);
-    } catch (err) {
-      if (isUniqueViolation(err)) throw new HttpError(409, 'Người dùng đã là thành viên');
-      throw err;
-    }
+    const user = db.prepare('SELECT id, name FROM users WHERE email = ?').get(email);
     res.status(201);
-    return { ok: true };
+    if (user) {
+      try {
+        db.prepare('INSERT INTO memberships (workspace_id, user_id, role) VALUES (?, ?, ?)').run(ws.id, user.id, role);
+      } catch (err) {
+        if (isUniqueViolation(err)) throw new HttpError(409, 'Người dùng đã là thành viên');
+        throw err;
+      }
+      await mailer.send({
+        to: email,
+        subject: `Bạn đã được thêm vào workspace "${ws.name}"`,
+        text: `Chào ${user.name},\n\n${req.user.name} đã thêm bạn vào workspace "${ws.name}" trên HiTechCloud LandingPage.\nĐăng nhập để bắt đầu: ${config.appUrl}/app/`,
+      });
+      return { status: 'added' };
+    }
+    const token = createInvitation(db, { workspaceId: ws.id, email, role, invitedBy: req.user.id });
+    await mailer.send({
+      to: email,
+      subject: `${req.user.name} mời bạn tham gia "${ws.name}" trên HiTechCloud`,
+      text: `Xin chào,\n\n${req.user.name} mời bạn cùng thiết kế landing page trong workspace "${ws.name}".\nNhận lời mời (hiệu lực 7 ngày): ${config.appUrl}/app/invite?token=${token}`,
+    });
+    return { status: 'invited' };
   }));
 
   r.delete('/workspaces/:wid/members/:uid', h((req) => {
@@ -301,7 +332,8 @@ function createApiRouter({ db, sessions, access, billing }) {
     const { ws } = access.workspace(req.user, req.params.wid);
     return db
       .prepare(
-        `SELECT s.*, (SELECT COUNT(*) FROM pages p WHERE p.site_id = s.id) AS page_count
+        `SELECT s.id, s.workspace_id, s.name, s.subdomain, s.custom_domain, s.created_at,
+           (SELECT COUNT(*) FROM pages p WHERE p.site_id = s.id) AS page_count
          FROM sites s WHERE s.workspace_id = ? ORDER BY s.id DESC`
       )
       .all(ws.id);
@@ -330,35 +362,86 @@ function createApiRouter({ db, sessions, access, billing }) {
         return Number(s.lastInsertRowid);
       });
       res.status(201);
-      return db.prepare('SELECT * FROM sites WHERE id = ?').get(id);
+      return siteView(db.prepare('SELECT * FROM sites WHERE id = ?').get(id), 'owner');
     } catch (err) {
       if (isUniqueViolation(err)) throw new HttpError(409, 'Tên miền phụ đã được sử dụng');
       throw err;
     }
   }));
 
-  r.get('/sites/:sid', h((req) => access.site(req.user, req.params.sid).site));
+  function siteView(site, role) {
+    const { settings_json, domain_token, ...rest } = site;
+    const settings = siteSettings.publicSettings(siteSettings.parse(site));
+    if (role === 'editor') delete settings.webhookSecret;
+    const domain = site.custom_domain
+      ? { name: site.custom_domain, verified: !!site.domain_verified_at, ...domains.instructions(site) }
+      : null;
+    return { ...rest, role, settings, domain };
+  }
+
+  r.get('/sites/:sid', h((req) => {
+    const { site, role } = access.site(req.user, req.params.sid);
+    return siteView(site, role);
+  }));
+
+  r.patch('/sites/:sid/settings', h((req) => {
+    const { site, role } = access.site(req.user, req.params.sid, 'admin');
+    const next = siteSettings.applyUpdate(siteSettings.parse(site), req.body || {}, workspacePlanById(db, site.workspace_id));
+    db.prepare('UPDATE sites SET settings_json = ? WHERE id = ?').run(JSON.stringify(next), site.id);
+    return siteView(db.prepare('SELECT * FROM sites WHERE id = ?').get(site.id), role);
+  }));
+
+  r.post('/sites/:sid/verify-domain', ha(async (req) => {
+    const { site, role } = access.site(req.user, req.params.sid, 'admin');
+    if (!site.custom_domain) throw new HttpError(400, 'Website chưa gắn tên miền riêng');
+    const result = await domains.verify(site);
+    if (!result.ok) {
+      throw new HttpError(400, 'Chưa tìm thấy bản ghi TXT xác minh. DNS có thể mất vài phút đến vài giờ để cập nhật.');
+    }
+    db.prepare("UPDATE sites SET domain_verified_at = datetime('now') WHERE id = ?").run(site.id);
+    return siteView(db.prepare('SELECT * FROM sites WHERE id = ?').get(site.id), role);
+  }));
+
+  r.post('/sites/:sid/notify-test', ha(async (req) => {
+    const { site } = access.site(req.user, req.params.sid, 'admin');
+    return notifier.leadCreated({ site, pageSlug: 'index', data: { name: 'Khách hàng thử nghiệm', phone: '0900000000', message: 'Đây là thông báo thử từ HiTechCloud' } });
+  }));
 
   r.patch('/sites/:sid', h((req) => {
     const { site } = access.site(req.user, req.params.sid, 'admin');
-    const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(site.workspace_id);
+    const plan = workspacePlanById(db, site.workspace_id);
     const name = req.body.name !== undefined ? str(req.body.name, { required: true, field: 'Tên website', max: 100 }) : site.name;
     let customDomain = site.custom_domain;
     if (req.body.customDomain !== undefined) {
       const d = str(req.body.customDomain, { max: 253, field: 'Tên miền' }).toLowerCase();
       if (d) {
-        if (!workspacePlan(ws).customDomain) throw new HttpError(402, 'Tên miền riêng chỉ có ở gói Pro trở lên');
+        if (!plan.customDomain) throw new HttpError(402, 'Tên miền riêng chỉ có ở gói Pro trở lên');
         if (!DOMAIN_RE.test(d)) throw new HttpError(400, 'Tên miền không hợp lệ');
       }
       customDomain = d || null;
     }
+    const domainChanged = customDomain !== site.custom_domain;
     try {
+      if (domainChanged && customDomain) {
+        // Release a stale, never-verified claim on this domain held by another site.
+        db.prepare(
+          `UPDATE sites SET custom_domain = NULL, domain_token = NULL, domain_claimed_at = NULL
+           WHERE custom_domain = ? AND id != ? AND domain_verified_at IS NULL AND (domain_claimed_at IS NULL OR domain_claimed_at < datetime('now', ?))`
+        ).run(customDomain, site.id, `-${CLAIM_TTL_HOURS} hours`);
+      }
       db.prepare('UPDATE sites SET name = ?, custom_domain = ? WHERE id = ?').run(name, customDomain, site.id);
+      if (domainChanged) {
+        db.prepare("UPDATE sites SET domain_token = ?, domain_verified_at = NULL, domain_claimed_at = CASE WHEN ? IS NULL THEN NULL ELSE datetime('now') END WHERE id = ?").run(
+          customDomain ? newDomainToken() : null,
+          customDomain,
+          site.id
+        );
+      }
     } catch (err) {
       if (isUniqueViolation(err)) throw new HttpError(409, 'Tên miền đã được gắn với website khác');
       throw err;
     }
-    return db.prepare('SELECT * FROM sites WHERE id = ?').get(site.id);
+    return siteView(db.prepare('SELECT * FROM sites WHERE id = ?').get(site.id), 'admin');
   }));
 
   r.delete('/sites/:sid', h((req) => {
@@ -368,7 +451,7 @@ function createApiRouter({ db, sessions, access, billing }) {
   }));
 
   // ---------- Pages ----------
-  const PAGE_FIELDS = 'id, site_id, title, slug, meta_description, published_at, updated_at';
+  const PAGE_FIELDS = 'id, site_id, title, slug, meta_description, og_image, published_at, updated_at';
 
   r.get('/sites/:sid/pages', h((req) => {
     const { site } = access.site(req.user, req.params.sid);
@@ -385,8 +468,7 @@ function createApiRouter({ db, sessions, access, billing }) {
 
   r.post('/sites/:sid/pages', h((req, res) => {
     const { site } = access.site(req.user, req.params.sid);
-    const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(site.workspace_id);
-    const plan = workspacePlan(ws);
+    const plan = workspacePlanById(db, site.workspace_id);
     const count = db.prepare('SELECT COUNT(*) AS n FROM pages WHERE site_id = ?').get(site.id).n;
     if (count >= plan.maxPagesPerSite) {
       throw new HttpError(402, `Gói ${plan.name} cho phép tối đa ${plan.maxPagesPerSite} trang mỗi website`);
@@ -409,22 +491,28 @@ function createApiRouter({ db, sessions, access, billing }) {
   r.get('/pages/:pid', h((req) => {
     const { page, site, role } = access.page(req.user, req.params.pid);
     const { project_json, draft_html, draft_css, published_html, published_css, ...meta } = page;
-    return { ...meta, role, site: { id: site.id, name: site.name, subdomain: site.subdomain, custom_domain: site.custom_domain } };
+    return { ...meta, role, site: { id: site.id, workspace_id: site.workspace_id, name: site.name, subdomain: site.subdomain, custom_domain: site.custom_domain } };
   }));
 
   r.patch('/pages/:pid', h((req) => {
     const { page } = access.page(req.user, req.params.pid);
     const title = req.body.title !== undefined ? str(req.body.title, { required: true, field: 'Tiêu đề', max: 200 }) : page.title;
     const meta = req.body.metaDescription !== undefined ? str(req.body.metaDescription, { max: 300, field: 'Mô tả' }) : page.meta_description;
+    let ogImage = page.og_image;
+    if (req.body.ogImage !== undefined) {
+      ogImage = str(req.body.ogImage, { max: 500, field: 'Ảnh chia sẻ' });
+      if (ogImage && !/^https?:\/\/[^\s"'<>]+$|^\/uploads\/[\w./-]+$/.test(ogImage)) throw new HttpError(400, 'Ảnh chia sẻ phải là URL http(s)');
+    }
     let pageSlug = page.slug;
     if (req.body.slug !== undefined && req.body.slug !== page.slug) {
       if (page.slug === 'index') throw new HttpError(400, 'Không thể đổi đường dẫn trang chủ');
       pageSlug = slug(req.body.slug, 'Đường dẫn');
     }
     try {
-      db.prepare("UPDATE pages SET title = ?, meta_description = ?, slug = ?, updated_at = datetime('now') WHERE id = ?").run(
+      db.prepare("UPDATE pages SET title = ?, meta_description = ?, og_image = ?, slug = ?, updated_at = datetime('now') WHERE id = ?").run(
         title,
         meta,
+        ogImage,
         pageSlug,
         page.id
       );
@@ -438,6 +526,7 @@ function createApiRouter({ db, sessions, access, billing }) {
   r.delete('/pages/:pid', h((req) => {
     const { page } = access.page(req.user, req.params.pid);
     if (page.slug === 'index') throw new HttpError(400, 'Không thể xóa trang chủ của website');
+    assertNotInRunningTest(db, page.id);
     db.prepare('DELETE FROM pages WHERE id = ?').run(page.id);
     return { ok: true };
   }));
@@ -465,32 +554,78 @@ function createApiRouter({ db, sessions, access, billing }) {
 
   r.post('/pages/:pid/publish', h((req) => {
     const { page } = access.page(req.user, req.params.pid);
+    snapshotVersion(db, page.id, req.user.id);
     db.prepare("UPDATE pages SET published_html = draft_html, published_css = draft_css, published_at = datetime('now') WHERE id = ?").run(page.id);
     return { ok: true, publishedAt: db.prepare('SELECT published_at FROM pages WHERE id = ?').get(page.id).published_at };
   }));
 
   r.post('/pages/:pid/unpublish', h((req) => {
     const { page } = access.page(req.user, req.params.pid);
+    assertNotInRunningTest(db, page.id);
     db.prepare('UPDATE pages SET published_html = NULL, published_css = NULL, published_at = NULL WHERE id = ?').run(page.id);
     return { ok: true };
   }));
 
   // ---------- Leads ----------
+  const LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
+
   r.get('/sites/:sid/leads', h((req, res) => {
     const { site } = access.site(req.user, req.params.sid);
+    const where = ['site_id = ?'];
+    const args = [site.id];
+    if (LEAD_STATUSES.includes(req.query.status)) {
+      where.push('status = ?');
+      args.push(req.query.status);
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '')) {
+      where.push('created_at >= ?');
+      args.push(req.query.from);
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '')) {
+      where.push("created_at < date(?, '+1 day')");
+      args.push(req.query.to);
+    }
+    const q = String(req.query.q || '').trim().slice(0, 100);
+    if (q) {
+      where.push("(data_json LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\')");
+      const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+      args.push(like, like);
+    }
     const rows = db
-      .prepare('SELECT id, page_slug, data_json, created_at FROM leads WHERE site_id = ? ORDER BY id DESC LIMIT 5000')
-      .all(site.id)
-      .map((l) => ({ id: l.id, page: l.page_slug, data: JSON.parse(l.data_json), createdAt: l.created_at }));
+      .prepare(`SELECT id, page_slug, data_json, source_json, status, note, created_at FROM leads WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT 5000`)
+      .all(...args)
+      .map((l) => ({
+        id: l.id,
+        page: l.page_slug,
+        data: JSON.parse(l.data_json),
+        source: JSON.parse(l.source_json || '{}'),
+        status: l.status,
+        note: l.note,
+        createdAt: l.created_at,
+      }));
 
     if (req.query.format !== 'csv') return rows;
 
     const keys = [...new Set(rows.flatMap((l) => Object.keys(l.data)))];
-    const lines = [['id', 'page', 'created_at', ...keys].map(csvCell).join(',')];
-    for (const l of rows) lines.push([l.id, l.page, l.createdAt, ...keys.map((k) => l.data[k])].map(csvCell).join(','));
+    const srcKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'ref'];
+    const lines = [['id', 'page', 'created_at', 'status', 'note', ...keys, ...srcKeys].map(csvCell).join(',')];
+    for (const l of rows) {
+      lines.push([l.id, l.page, l.createdAt, l.status, l.note, ...keys.map((k) => l.data[k]), ...srcKeys.map((k) => l.source[k])].map(csvCell).join(','));
+    }
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="leads-${site.subdomain}.csv"`);
-    res.send('﻿' + lines.join('\r\n'));
+    res.send('\uFEFF' + lines.join('\r\n'));
+  }));
+
+  r.patch('/leads/:lid', h((req) => {
+    const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.lid);
+    if (!lead) throw new HttpError(404, 'Không tìm thấy');
+    access.site(req.user, lead.site_id);
+    const status = req.body.status !== undefined ? req.body.status : lead.status;
+    if (!LEAD_STATUSES.includes(status)) throw new HttpError(400, 'Trạng thái không hợp lệ');
+    const note = req.body.note !== undefined ? str(req.body.note, { max: 2000, field: 'Ghi chú' }) : lead.note;
+    db.prepare('UPDATE leads SET status = ?, note = ? WHERE id = ?').run(status, note, lead.id);
+    return { ok: true };
   }));
 
   r.delete('/leads/:lid', h((req) => {
@@ -504,4 +639,4 @@ function createApiRouter({ db, sessions, access, billing }) {
   return { router: r, usage };
 }
 
-module.exports = { createApiRouter, monthStart };
+module.exports = { createApiRouter };

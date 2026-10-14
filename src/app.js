@@ -7,6 +7,11 @@ const { createAccess } = require('./access');
 const { createApiRouter } = require('./routes/api');
 const { createSitesRouter } = require('./routes/sites');
 const { createBilling } = require('./billing');
+const { createMailer } = require('./mailer');
+const { createAccountRouter } = require('./routes/account');
+const { createNotifier } = require('./notify');
+const { createContentRouter } = require('./routes/content');
+const { createAbRouter } = require('./routes/abtests');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -18,8 +23,37 @@ function createApp({ db, config }) {
   const sessions = createSessionStore(db, config);
   const access = createAccess(db);
   const appOrigin = new URL(config.appUrl).origin;
+  const uploadsDir = config.uploadsDir || path.join(ROOT, 'data', 'uploads');
 
-  const billing = createBilling({ db, config });
+  const mailer = config.mailer || createMailer(config);
+  const billing = createBilling({ db, config, mailer });
+  const notifier = createNotifier({ db, config, mailer });
+  app.locals.mailer = mailer;
+
+  app.get('/healthz', (_req, res) => {
+    try {
+      db.prepare('SELECT 1').get();
+      res.json({ ok: true });
+    } catch {
+      res.status(503).json({ ok: false });
+    }
+  });
+
+  // Uploaded images, served on every host so published pages can use /uploads/… paths.
+  app.use(
+    '/uploads',
+    express.static(uploadsDir, {
+      maxAge: '30d',
+      immutable: true,
+      index: false,
+      fallthrough: false,
+      setHeaders: (res) => {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'");
+        res.setHeader('Access-Control-Allow-Origin', '*');
+      },
+    })
+  );
 
   app.use(sessions.load);
 
@@ -27,7 +61,17 @@ function createApp({ db, config }) {
   app.use(billing.router);
 
   // Published customer sites (custom domains, subdomains, /p/, /preview, lead capture).
-  app.use(createSitesRouter({ db, config, access }));
+  app.use(createSitesRouter({ db, config, access, notifier }));
+
+  // Security headers for the dashboard, editor and API (published pages set their own).
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    if (config.secureCookies) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    next();
+  });
 
   // CSRF protection for the JSON API: reject cross-origin writes and require a
   // JSON body (which a cross-site HTML form cannot produce).
@@ -35,13 +79,17 @@ function createApp({ db, config }) {
     if (req.method === 'GET' || req.method === 'HEAD') return next();
     const origin = req.get('origin');
     if (origin && origin !== appOrigin) return res.status(403).json({ error: 'Origin không hợp lệ' });
-    if (['POST', 'PUT', 'PATCH'].includes(req.method) && !req.is('application/json')) {
+    const isImageUpload = /^\/workspaces\/\d+\/assets$/.test(req.path) && req.is('image/*');
+    if (['POST', 'PUT', 'PATCH'].includes(req.method) && !req.is('application/json') && !isImageUpload) {
       return res.status(415).json({ error: 'Yêu cầu phải ở định dạng JSON' });
     }
     next();
   });
   app.use('/api', express.json({ limit: '5mb' }));
-  app.use('/api', createApiRouter({ db, sessions, access, billing }).router);
+  app.use('/api', createAccountRouter({ db, config, mailer, sessions }));
+  app.use('/api', createApiRouter({ db, sessions, access, billing, mailer, config, notifier }).router);
+  app.use('/api', createContentRouter({ db, config: { ...config, uploadsDir }, access }));
+  app.use('/api', createAbRouter({ db, access }));
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Không tìm thấy' }));
 
   // Editor vendor assets (GrapesJS + plugins BSD-3-Clause, Font Awesome OFL/MIT).

@@ -1,0 +1,41 @@
+# Production stack: app + Caddy (automatic HTTPS, on-demand TLS for customer domains).
+# 1. cp .env.example .env and fill it in (APP_URL=https://$APP_DOMAIN)
+# 2. DNS: A record APP_DOMAIN and *.PUBLISH_ROOT_DOMAIN -> this server; CNAME_TARGET -> this server
+# 3. docker compose up -d --build
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_FILE: /data/hitechcloud.db
+      UPLOADS_DIR: /data/uploads
+    volumes:
+      - app-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@hitechcloud.vn}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  app-data:
+  caddy-data:
+  caddy-config:
