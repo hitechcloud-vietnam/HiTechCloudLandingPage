@@ -1,17 +1,51 @@
 name: Release
 
-# Push a tag like v1.0.0 on main to publish a GitHub Release (notes from CHANGELOG.md)
-# and a Docker image ghcr.io/<owner>/<repo>:<tag> (+ :latest).
+# Publishes a GitHub Release (notes from CHANGELOG.md) and a Docker image
+# ghcr.io/<owner>/<repo>:<tag> (+ :latest) when:
+#   - main receives a package.json version that has no v<version> tag yet, or
+#   - a tag v* is pushed manually.
+# To release: bump "version" in package.json, add a "## [vX.Y.Z]" section to
+# CHANGELOG.md, merge to main.
 on:
   push:
+    branches: [main]
     tags: ['v*']
 
 permissions:
   contents: read
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  plan:
+    name: Decide release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      release: ${{ steps.plan.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: plan
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+            RELEASE=true
+          else
+            TAG="v$(node -p "require('./package.json').version")"
+            if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then RELEASE=false; else RELEASE=true; fi
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "release=${RELEASE}" >> "$GITHUB_OUTPUT"
+          echo "Tag ${TAG}, release=${RELEASE}"
+
   test:
     name: Test before release
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,28 +58,32 @@ jobs:
 
   release:
     name: GitHub Release
-    needs: test
+    needs: [plan, test]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
       - name: Extract release notes from CHANGELOG.md
         run: |
-          awk -v h="## [${GITHUB_REF_NAME}]" 'index($0, "## [") == 1 { p = (index($0, h) == 1); if (p) next } p' CHANGELOG.md > notes.md
+          awk -v h="## [${TAG}]" 'index($0, "## [") == 1 { p = (index($0, h) == 1); if (p) next } p' CHANGELOG.md > notes.md
           if [ ! -s notes.md ]; then echo "Xem CHANGELOG.md" > notes.md; fi
-      - name: Create release
+      - name: Create release (and the tag, when releasing from main)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --title "HiTechCloud LandingPage $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+        run: gh release create "$TAG" --target "$GITHUB_SHA" --title "HiTechCloud LandingPage $TAG" --notes-file notes.md
 
   image:
     name: Docker image (GHCR)
-    needs: test
+    needs: [plan, test]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
       - name: Log in to GHCR
@@ -53,6 +91,6 @@ jobs:
       - name: Build and push
         run: |
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
-          docker build -t "$IMAGE:$GITHUB_REF_NAME" -t "$IMAGE:latest" .
-          docker push "$IMAGE:$GITHUB_REF_NAME"
+          docker build -t "$IMAGE:$TAG" -t "$IMAGE:latest" .
+          docker push "$IMAGE:$TAG"
           docker push "$IMAGE:latest"
