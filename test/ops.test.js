@@ -59,8 +59,38 @@ test('custom domain verification and TLS ask', async (t) => {
     const r = await c('PATCH', `/api/sites/${site.id}`, { customDomain: 'www.congty.vn' });
     assert.equal(r.data.domain.verified, false);
     assert.equal(await tlsAsk('khuyenmai.congty.vn'), 404);
+    // A CNAME to our target is routing only, not proof of ownership.
     dnsRecords.cname['www.congty.vn'] = ['Sites.HiTechCloud.site.'];
+    assert.equal((await c('POST', `/api/sites/${site.id}/verify-domain`, {})).status, 400);
+    dnsRecords.txt['_htc-verify.www.congty.vn'] = [[r.data.domain.txtValue]];
     assert.equal((await c('POST', `/api/sites/${site.id}/verify-domain`, {})).data.domain.verified, true);
+  });
+
+  await t.test('stale unverified claims can be taken over, fresh ones cannot', async () => {
+    const other = client(base);
+    await other('POST', '/api/auth/signup', { name: 'Khác', email: 'other@example.com', password: 'matkhau123' });
+    const ows = (await other('GET', '/api/auth/me')).data.workspaces[0].id;
+    db.prepare("UPDATE workspaces SET plan = 'pro' WHERE id = ?").run(ows);
+    const squat = (await other('POST', `/api/workspaces/${ows}/sites`, { name: 'Squat', subdomain: 'squat' })).data;
+    assert.equal((await other('PATCH', `/api/sites/${squat.id}`, { customDomain: 'brand.vn' })).status, 200);
+    // Verified domains are never released.
+    assert.equal((await other('PATCH', `/api/sites/${squat.id}`, { customDomain: 'www.congty.vn' })).status, 409);
+
+    const site2 = (await c('POST', `/api/workspaces/${wsId}/sites`, { name: 'Brand', subdomain: 'brand' })).data;
+    assert.equal((await c('PATCH', `/api/sites/${site2.id}`, { customDomain: 'brand.vn' })).status, 409);
+    db.prepare("UPDATE sites SET domain_claimed_at = datetime('now', '-73 hours') WHERE id = ?").run(squat.id);
+    const taken = await c('PATCH', `/api/sites/${site2.id}`, { customDomain: 'brand.vn' });
+    assert.equal(taken.status, 200);
+    assert.equal(taken.data.custom_domain, 'brand.vn');
+    assert.equal((await other('GET', `/api/sites/${squat.id}`)).data.custom_domain, null);
+  });
+
+  await t.test('custom domain stops when the plan lapses', async () => {
+    db.prepare("UPDATE workspaces SET plan_expires_at = '2020-01-01T00:00:00Z' WHERE id = ?").run(wsId);
+    assert.equal(await tlsAsk('www.congty.vn'), 404);
+    assert.equal((await getWithHost(base, '/', 'www.congty.vn')).status, 404);
+    db.prepare('UPDATE workspaces SET plan_expires_at = NULL WHERE id = ?').run(wsId);
+    assert.equal(await tlsAsk('www.congty.vn'), 200);
   });
 
   await t.test('TLS ask covers platform subdomains only for existing sites', async () => {

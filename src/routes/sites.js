@@ -1,14 +1,25 @@
 'use strict';
 
 const express = require('express');
-const { workspacePlan } = require('../plans');
+const { workspacePlanById } = require('../plans');
 const { renderPage, renderMessage } = require('../render');
-const { monthStart } = require('./api');
+const { leadsThisMonth } = require('../usage');
 const { createRateLimiter } = require('../ratelimit');
 const { parse: parseSettings } = require('../siteSettings');
-const { pickVariant } = require('./abtests');
+const { pickVariant, recordAbView } = require('./abtests');
 
 // Public base URL of a site, used for canonical links and sitemaps.
+// Settings as allowed by the workspace's current plan (paid features stop
+// working when a subscription lapses, not only when they are saved).
+function entitledSettings(site, plan) {
+  const settings = parseSettings(site);
+  if (!plan.customCode) {
+    delete settings.customHead;
+    delete settings.customBody;
+  }
+  return settings;
+}
+
 function siteBaseUrl(site, config) {
   if (site.custom_domain && site.domain_verified_at) return `https://${site.custom_domain}`;
   if (config.publishRootDomain) return `https://${site.subdomain}.${config.publishRootDomain}`;
@@ -41,13 +52,15 @@ function createSitesRouter({ db, config, access, notifier }) {
       .get(site.id, pageSlug || 'index');
     if (!requested) return sendHtml(res, renderMessage('404', 'Trang không tồn tại hoặc chưa được xuất bản'), sandbox);
     const submitted = req.query.submitted === '1';
+    const plan = workspacePlanById(db, site.workspace_id);
     // Under a running A/B test the visitor may get the variant at the same URL.
-    const page = submitted ? requested : pickVariant(db, requested, req, res);
-    const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(site.workspace_id);
+    const ab = submitted || !plan.abTesting ? { page: requested, test: null } : pickVariant(db, requested, req, res);
+    const { page } = ab;
     if (!submitted && !BOT_RE.test(req.get('user-agent') || '')) {
       db.prepare(
         'INSERT INTO page_views (page_id, day, views) VALUES (?, ?, 1) ON CONFLICT (page_id, day) DO UPDATE SET views = views + 1'
       ).run(page.id, new Date().toISOString().slice(0, 10));
+      if (ab.test) recordAbView(db, ab.test, ab.bucket);
     }
     res.setHeader('Cache-Control', 'no-cache');
     sendHtml(
@@ -58,10 +71,12 @@ function createSitesRouter({ db, config, access, notifier }) {
           site,
           html: page.published_html,
           css: page.published_css,
-          showBranding: !workspacePlan(ws).removeBranding,
+          showBranding: !plan.removeBranding,
           notice: submitted ? 'Cảm ơn bạn! Thông tin đã được gửi thành công.' : '',
-          settings: parseSettings(site),
+          settings: entitledSettings(site, plan),
           canonicalUrl: `${siteBaseUrl(site, config)}/${requested.slug === 'index' ? '' : requested.slug}`,
+          formSlug: requested.slug,
+          formParams: `pid=${page.id}${ab.test ? `&ab=${ab.test.id}${ab.bucket}` : ''}`,
         }),
       },
       sandbox
@@ -72,7 +87,7 @@ function createSitesRouter({ db, config, access, notifier }) {
     const host = String(hostname || '').toLowerCase();
     if (!host) return null;
     const byDomain = db.prepare('SELECT * FROM sites WHERE custom_domain = ? AND domain_verified_at IS NOT NULL').get(host);
-    if (byDomain) return byDomain;
+    if (byDomain && workspacePlanById(db, byDomain.workspace_id).customDomain) return byDomain;
     const root = config.publishRootDomain;
     if (root && host.endsWith(`.${root}`)) {
       const sub = host.slice(0, -root.length - 1);
@@ -111,24 +126,27 @@ function createSitesRouter({ db, config, access, notifier }) {
     }
     if (!Object.keys(data).length) return res.redirect(303, back);
 
-    const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(site.workspace_id);
-    const used = db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM leads l JOIN sites s ON s.id = l.site_id
-         WHERE s.workspace_id = ? AND l.created_at >= ?`
-      )
-      .get(site.workspace_id, monthStart()).n;
-    if (used >= workspacePlan(ws).maxLeadsPerMonth) {
+    const plan = workspacePlanById(db, site.workspace_id);
+    if (leadsThisMonth(db, site.workspace_id) >= plan.maxLeadsPerMonth) {
       return sendHtml(res, renderMessage('Tạm ngưng nhận đăng ký', 'Website đã đạt giới hạn tiếp nhận trong tháng.', 503));
     }
-    const page = db.prepare('SELECT id FROM pages WHERE site_id = ? AND slug = ?').get(site.id, pageSlug);
-    db.prepare('INSERT INTO leads (site_id, page_slug, page_id, data_json, source_json, ip) VALUES (?, ?, ?, ?, ?, ?)').run(
+    // pid = page actually shown (an A/B variant may be served at another slug).
+    const page =
+      db.prepare('SELECT id FROM pages WHERE site_id = ? AND id = ?').get(site.id, Number(req.query.pid) || 0) ||
+      db.prepare('SELECT id FROM pages WHERE site_id = ? AND slug = ?').get(site.id, pageSlug);
+    const abMatch = /^(\d+)([ab])$/.exec(String(req.query.ab || ''));
+    const abTest = abMatch && db.prepare("SELECT id FROM ab_tests WHERE id = ? AND site_id = ? AND status = 'running'").get(Number(abMatch[1]), site.id);
+    db.prepare(
+      'INSERT INTO leads (site_id, page_slug, page_id, data_json, source_json, ip, ab_test_id, ab_bucket) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(
       site.id,
       pageSlug,
       page ? page.id : null,
       JSON.stringify(data),
       JSON.stringify(source),
-      req.ip
+      req.ip,
+      abTest ? abTest.id : null,
+      abTest ? abMatch[2] : null
     );
     if (notifier) notifier.leadCreated({ site, pageSlug, data });
     res.redirect(303, back);
@@ -136,7 +154,12 @@ function createSitesRouter({ db, config, access, notifier }) {
 
   function sitemap(site) {
     const base = siteBaseUrl(site, config);
-    const pages = db.prepare('SELECT slug, published_at FROM pages WHERE site_id = ? AND published_at IS NOT NULL ORDER BY id').all(site.id);
+    const pages = db
+      .prepare(
+        `SELECT slug, published_at FROM pages WHERE site_id = ? AND published_at IS NOT NULL
+         AND id NOT IN (SELECT variant_page_id FROM ab_tests WHERE status = 'running') ORDER BY id`
+      )
+      .all(site.id);
     const urls = pages
       .map((p) => `<url><loc>${base}/${p.slug === 'index' ? '' : p.slug}</loc><lastmod>${p.published_at.slice(0, 10)}</lastmod></url>`)
       .join('');
@@ -200,7 +223,8 @@ function createSitesRouter({ db, config, access, notifier }) {
     }
     const { page, site } = found;
     res.setHeader('Cache-Control', 'no-store');
-    sendHtml(res, { html: renderPage({ page, site, html: page.draft_html, css: page.draft_css, showBranding: false, settings: parseSettings(site) }) }, true);
+    const settings = entitledSettings(site, workspacePlanById(db, site.workspace_id));
+    sendHtml(res, { html: renderPage({ page, site, html: page.draft_html, css: page.draft_css, showBranding: false, settings }) }, true);
   });
 
   return r;

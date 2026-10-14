@@ -143,7 +143,7 @@ test('SaaS end-to-end flow', async (t) => {
     assert.match(res.headers.get('content-security-policy'), /^sandbox /);
     const html = await res.text();
     assert.match(html, /<h1>Xin chào<\/h1>/);
-    assert.match(html, /action="\/_htc\/lead\?site=\d+&amp;page=index" method="post"/);
+    assert.match(html, /action="\/_htc\/lead\?site=\d+&amp;page=index&amp;pid=\d+" method="post"/);
     assert.doesNotMatch(html, /x\.test/);
     assert.doesNotMatch(html, /<\/style><script>/);
     assert.match(html, /Tạo bởi HiTechCloud/); // free plan branding

@@ -1,6 +1,8 @@
 'use strict';
 
 const express = require('express');
+const { handler } = require('../http');
+const { monthStart, leadsThisMonth } = require('../usage');
 const { hashPassword, verifyPassword, requireUser } = require('../auth');
 const { HttpError } = require('../access');
 const { addMonths } = require('../billing');
@@ -8,9 +10,10 @@ const { createRateLimiter } = require('../ratelimit');
 const { acceptInvitation, createInvitation } = require('./account');
 const siteSettings = require('../siteSettings');
 const { snapshotVersion } = require('./content');
-const { createDomainVerifier, newDomainToken } = require('../domains');
+const { assertNotInRunningTest } = require('./abtests');
+const { createDomainVerifier, newDomainToken, CLAIM_TTL_HOURS } = require('../domains');
 const { transaction } = require('../db');
-const { PLANS, workspacePlan, effectivePlanId, publicPlan } = require('../plans');
+const { PLANS, workspacePlan, workspacePlanById, effectivePlanId, publicPlan } = require('../plans');
 const { renderTemplate, listTemplates, listBlocks, BASE_CSS } = require('../templates');
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -37,10 +40,6 @@ function isUniqueViolation(err) {
   return /UNIQUE constraint failed/.test(String(err && err.message));
 }
 
-function monthStart() {
-  const d = new Date();
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString().slice(0, 19).replace('T', ' ');
-}
 
 function csvCell(value) {
   let s = String(value ?? '');
@@ -56,34 +55,15 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   const signupLimiter = createRateLimiter({ windowMs: 3600_000, max: 10 });
 
   // Wrap handlers so thrown HttpErrors become JSON responses.
-  const h = (fn) => (req, res, next) => {
-    try {
-      const out = fn(req, res);
-      if (out !== undefined && !res.headersSent) res.json(out);
-    } catch (err) {
-      next(err);
-    }
-  };
+  const h = handler;
 
-  const ha = (fn) => (req, res, next) => {
-    Promise.resolve()
-      .then(() => fn(req, res))
-      .then((out) => {
-        if (out !== undefined && !res.headersSent) res.json(out);
-      })
-      .catch(next);
-  };
+  const ha = handler;
 
   function usage(workspaceId) {
     return {
       sites: db.prepare('SELECT COUNT(*) AS n FROM sites WHERE workspace_id = ?').get(workspaceId).n,
       members: db.prepare('SELECT COUNT(*) AS n FROM memberships WHERE workspace_id = ?').get(workspaceId).n,
-      leadsThisMonth: db
-        .prepare(
-          `SELECT COUNT(*) AS n FROM leads l JOIN sites s ON s.id = l.site_id
-           WHERE s.workspace_id = ? AND l.created_at >= ?`
-        )
-        .get(workspaceId, monthStart()).n,
+      leadsThisMonth: leadsThisMonth(db, workspaceId),
     };
   }
 
@@ -406,8 +386,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
 
   r.patch('/sites/:sid/settings', h((req) => {
     const { site, role } = access.site(req.user, req.params.sid, 'admin');
-    const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(site.workspace_id);
-    const next = siteSettings.applyUpdate(siteSettings.parse(site), req.body || {}, workspacePlan(ws));
+    const next = siteSettings.applyUpdate(siteSettings.parse(site), req.body || {}, workspacePlanById(db, site.workspace_id));
     db.prepare('UPDATE sites SET settings_json = ? WHERE id = ?').run(JSON.stringify(next), site.id);
     return siteView(db.prepare('SELECT * FROM sites WHERE id = ?').get(site.id), role);
   }));
@@ -417,7 +396,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
     if (!site.custom_domain) throw new HttpError(400, 'Website chưa gắn tên miền riêng');
     const result = await domains.verify(site);
     if (!result.ok) {
-      throw new HttpError(400, 'Chưa tìm thấy bản ghi DNS xác minh. DNS có thể mất vài phút đến vài giờ để cập nhật.');
+      throw new HttpError(400, 'Chưa tìm thấy bản ghi TXT xác minh. DNS có thể mất vài phút đến vài giờ để cập nhật.');
     }
     db.prepare("UPDATE sites SET domain_verified_at = datetime('now') WHERE id = ?").run(site.id);
     return siteView(db.prepare('SELECT * FROM sites WHERE id = ?').get(site.id), role);
@@ -430,22 +409,33 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
 
   r.patch('/sites/:sid', h((req) => {
     const { site } = access.site(req.user, req.params.sid, 'admin');
-    const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(site.workspace_id);
+    const plan = workspacePlanById(db, site.workspace_id);
     const name = req.body.name !== undefined ? str(req.body.name, { required: true, field: 'Tên website', max: 100 }) : site.name;
     let customDomain = site.custom_domain;
     if (req.body.customDomain !== undefined) {
       const d = str(req.body.customDomain, { max: 253, field: 'Tên miền' }).toLowerCase();
       if (d) {
-        if (!workspacePlan(ws).customDomain) throw new HttpError(402, 'Tên miền riêng chỉ có ở gói Pro trở lên');
+        if (!plan.customDomain) throw new HttpError(402, 'Tên miền riêng chỉ có ở gói Pro trở lên');
         if (!DOMAIN_RE.test(d)) throw new HttpError(400, 'Tên miền không hợp lệ');
       }
       customDomain = d || null;
     }
     const domainChanged = customDomain !== site.custom_domain;
     try {
+      if (domainChanged && customDomain) {
+        // Release a stale, never-verified claim on this domain held by another site.
+        db.prepare(
+          `UPDATE sites SET custom_domain = NULL, domain_token = NULL, domain_claimed_at = NULL
+           WHERE custom_domain = ? AND id != ? AND domain_verified_at IS NULL AND (domain_claimed_at IS NULL OR domain_claimed_at < datetime('now', ?))`
+        ).run(customDomain, site.id, `-${CLAIM_TTL_HOURS} hours`);
+      }
       db.prepare('UPDATE sites SET name = ?, custom_domain = ? WHERE id = ?').run(name, customDomain, site.id);
       if (domainChanged) {
-        db.prepare('UPDATE sites SET domain_token = ?, domain_verified_at = NULL WHERE id = ?').run(customDomain ? newDomainToken() : null, site.id);
+        db.prepare("UPDATE sites SET domain_token = ?, domain_verified_at = NULL, domain_claimed_at = CASE WHEN ? IS NULL THEN NULL ELSE datetime('now') END WHERE id = ?").run(
+          customDomain ? newDomainToken() : null,
+          customDomain,
+          site.id
+        );
       }
     } catch (err) {
       if (isUniqueViolation(err)) throw new HttpError(409, 'Tên miền đã được gắn với website khác');
@@ -478,8 +468,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
 
   r.post('/sites/:sid/pages', h((req, res) => {
     const { site } = access.site(req.user, req.params.sid);
-    const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(site.workspace_id);
-    const plan = workspacePlan(ws);
+    const plan = workspacePlanById(db, site.workspace_id);
     const count = db.prepare('SELECT COUNT(*) AS n FROM pages WHERE site_id = ?').get(site.id).n;
     if (count >= plan.maxPagesPerSite) {
       throw new HttpError(402, `Gói ${plan.name} cho phép tối đa ${plan.maxPagesPerSite} trang mỗi website`);
@@ -537,6 +526,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   r.delete('/pages/:pid', h((req) => {
     const { page } = access.page(req.user, req.params.pid);
     if (page.slug === 'index') throw new HttpError(400, 'Không thể xóa trang chủ của website');
+    assertNotInRunningTest(db, page.id);
     db.prepare('DELETE FROM pages WHERE id = ?').run(page.id);
     return { ok: true };
   }));
@@ -571,6 +561,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
 
   r.post('/pages/:pid/unpublish', h((req) => {
     const { page } = access.page(req.user, req.params.pid);
+    assertNotInRunningTest(db, page.id);
     db.prepare('UPDATE pages SET published_html = NULL, published_css = NULL, published_at = NULL WHERE id = ?').run(page.id);
     return { ok: true };
   }));
@@ -648,4 +639,4 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   return { router: r, usage };
 }
 
-module.exports = { createApiRouter, monthStart };
+module.exports = { createApiRouter };

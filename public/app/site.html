@@ -175,11 +175,10 @@ async function load() {
     $('#verify-domain').hidden = d.verified;
     $('#domain-help').innerHTML = d.verified
       ? `Trang đang chạy tại <a href="https://${esc(d.name)}" target="_blank" rel="noopener">https://${esc(d.name)}</a>. Chứng chỉ HTTPS được cấp tự động.`
-      : `Thêm <b>một</b> trong hai bản ghi DNS sau tại nhà cung cấp tên miền:<br>
-         ${d.cnameTarget ? `• <code>CNAME</code> &nbsp;<code>${esc(d.name)}</code> → <code>${esc(d.cnameTarget)}</code><br>` : ''}
-         • <code>TXT</code> &nbsp;<code>${esc(d.txtName)}</code> = <code>${esc(d.txtValue)}</code><br>
-         ${d.cnameTarget ? '' : 'và trỏ bản ghi A/CNAME của tên miền về máy chủ HiTechCloud.<br>'}
-         Sau đó bấm “Kiểm tra DNS”.`;
+      : `Thêm các bản ghi DNS sau tại nhà cung cấp tên miền:<br>
+         1. Xác minh quyền sở hữu: <code>TXT</code> &nbsp;<code>${esc(d.txtName)}</code> = <code>${esc(d.txtValue)}</code><br>
+         2. Trỏ tên miền về HiTechCloud: ${d.cnameTarget ? `<code>CNAME</code> &nbsp;<code>${esc(d.name)}</code> → <code>${esc(d.cnameTarget)}</code>` : 'bản ghi A/CNAME về máy chủ HiTechCloud'}<br>
+         Sau đó bấm “Kiểm tra DNS”. Nếu không xác minh trong 72 giờ, website khác có thể nhận tên miền này.`;
   }
   const st = site.settings || {};
   const f = $('#integrations-form');

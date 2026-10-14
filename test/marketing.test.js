@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const { startServer, client, getWithHost } = require('./helpers');
-const { isPrivateAddress, assertPublicUrl } = require('../src/notify');
+const { isPrivateAddress, assertPublicUrl, guardedLookup, httpsPostJson } = require('../src/notify');
 
 test('site integrations: tracking, SEO files, lead notifications', async (t) => {
   const calls = [];
@@ -71,6 +71,10 @@ test('site integrations: tracking, SEO files, lead notifications', async (t) => 
     const html = await (await fetch(`${base}/p/shop`)).text();
     assert.match(html, /x-custom/);
     assert.match(html, /chat-widget/);
+    // Lapsed subscription: custom code stops being injected.
+    db.prepare("UPDATE workspaces SET plan_expires_at = '2020-01-01T00:00:00Z' WHERE id = ?").run(wsId);
+    assert.doesNotMatch(await (await fetch(`${base}/p/shop`)).text(), /x-custom|chat-widget/);
+    db.prepare('UPDATE workspaces SET plan_expires_at = NULL WHERE id = ?').run(wsId);
   });
 
   await t.test('sitemap.xml and robots.txt', async () => {
@@ -117,7 +121,10 @@ test('webhook SSRF guard', async () => {
     assert.equal(isPrivateAddress(ip), true, ip);
   }
   for (const ip of ['8.8.8.8', '1.1.1.1', '2606:4700::1111']) assert.equal(isPrivateAddress(ip), false, ip);
-  await assert.rejects(assertPublicUrl('https://127.0.0.1/hook'), /nội bộ/);
-  await assert.rejects(assertPublicUrl('https://169.254.169.254/latest'), /nội bộ/);
-  await assert.rejects(assertPublicUrl('http://8.8.8.8/'), /https/);
+  assert.throws(() => assertPublicUrl('https://127.0.0.1/hook'), /nội bộ/);
+  assert.throws(() => assertPublicUrl('https://[::1]/hook'), /nội bộ/);
+  assert.throws(() => assertPublicUrl('http://8.8.8.8/'), /https/);
+  // Hostnames are checked at connect time, on the address actually used.
+  await assert.rejects(httpsPostJson('https://localhost:9/hook', '{}', {}), /nội bộ/);
+  await new Promise((resolve) => guardedLookup('localhost', {}, (err) => { assert.match(err.message, /nội bộ/); resolve(); }));
 });

@@ -14,8 +14,8 @@ function escapeHtml(value) {
 
 // Points every <form> on a published page at the platform lead endpoint so
 // submissions are captured without the customer writing any backend code.
-function rewriteForms(html, siteId, pageSlug) {
-  const action = `/_htc/lead?site=${siteId}&amp;page=${encodeURIComponent(pageSlug)}`;
+function rewriteForms(html, siteId, pageSlug, extraParams = '') {
+  const action = `/_htc/lead?site=${siteId}&amp;page=${encodeURIComponent(pageSlug)}${extraParams ? `&amp;${escapeHtml(extraParams)}` : ''}`;
   return html.replace(/<form\b([^>]*)>/gi, (_m, attrs) => {
     const kept = attrs.replace(/\s(action|method)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
     return `<form${kept} action="${action}" method="post">` +
@@ -32,9 +32,11 @@ const ATTRIBUTION_JS = `<script>(function(){var q=new URLSearchParams(location.s
 
 const BRANDING = `<a href="https://hitechcloud.vn" target="_blank" rel="noopener" style="position:fixed;left:12px;bottom:12px;z-index:2147483647;background:#0f172a;color:#fff;font:12px/1 system-ui,sans-serif;padding:8px 12px;border-radius:999px;text-decoration:none;opacity:.85">Tạo bởi HiTechCloud</a>`;
 
-function renderPage({ page, site, html, css, showBranding, notice, settings = {}, canonicalUrl = '' }) {
+// formSlug: slug the visitor requested (an A/B variant is served at the original
+// URL, so thank-you redirects return there); formParams: extra lead attribution.
+function renderPage({ page, site, html, css, showBranding, notice, settings = {}, canonicalUrl = '', formSlug, formParams = '' }) {
   const safeCss = String(css || '').replace(/<\/style/gi, '<\\/style');
-  const body = rewriteForms(String(html || ''), site.id, page.slug);
+  const body = rewriteForms(String(html || ''), site.id, formSlug || page.slug, formParams);
   const head = [
     settings.faviconUrl ? `<link rel="icon" href="${escapeHtml(settings.faviconUrl)}">` : '',
     page.og_image ? `<meta property="og:image" content="${escapeHtml(page.og_image)}">` : '',

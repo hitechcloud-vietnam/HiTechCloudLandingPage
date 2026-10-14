@@ -21,15 +21,34 @@ function createProviders(config) {
   return providers;
 }
 
+// Adds calendar months, clamping to the month's last day (31 Jan + 1 = 28/29 Feb).
 function addMonths(date, months) {
   const d = new Date(date);
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
   d.setUTCMonth(d.getUTCMonth() + months);
+  const lastDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, lastDay));
   return d;
 }
 
 // Unique numeric order code (payOS requires a positive integer ≤ 2^53-1).
 function newOrderCode() {
   return String(Date.now() * 1000 + crypto.randomInt(1000));
+}
+
+// Expiry after paying for `order`:
+//  - same plan, still active: stacks onto the remaining time;
+//  - switching between paid plans: the unused time of the old plan is
+//    converted to the new plan by price and added on top;
+//  - otherwise: starts now.
+function newExpiry(ws, currentPlan, order, now) {
+  const end = addMonths(now, order.months);
+  const remainingMs = ws.plan_expires_at ? new Date(ws.plan_expires_at) - now : 0;
+  if (currentPlan === 'free' || remainingMs <= 0) return end;
+  if (currentPlan === order.plan) return addMonths(new Date(ws.plan_expires_at), order.months);
+  const credit = remainingMs * (PLANS[currentPlan].priceVnd / PLANS[order.plan].priceVnd);
+  return new Date(end.getTime() + Math.floor(credit));
 }
 
 function createBilling({ db, config, mailer }) {
@@ -52,14 +71,10 @@ function createBilling({ db, config, mailer }) {
       const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(order.workspace_id);
       if (!ws) return true;
       const now = new Date();
-      // Renewing the same active plan stacks onto the remaining time.
-      const stillActive = effectivePlanId(ws, now) === order.plan && ws.plan_expires_at && new Date(ws.plan_expires_at) > now;
-      const start = stillActive ? new Date(ws.plan_expires_at) : now;
-      db.prepare('UPDATE workspaces SET plan = ?, plan_expires_at = ? WHERE id = ?').run(
-        order.plan,
-        addMonths(start, order.months).toISOString(),
-        ws.id
-      );
+      const current = effectivePlanId(ws, now);
+      // A paid plan granted without expiry by a platform admin is never shortened.
+      if (current === order.plan && !ws.plan_expires_at) return true;
+      db.prepare('UPDATE workspaces SET plan = ?, plan_expires_at = ? WHERE id = ?').run(order.plan, newExpiry(ws, current, order, now).toISOString(), ws.id);
       return true;
     });
     if (changed) sendReceipt(order.id);
@@ -187,4 +202,4 @@ function createBilling({ db, config, mailer }) {
   };
 }
 
-module.exports = { createBilling, addMonths };
+module.exports = { createBilling, addMonths, newExpiry };

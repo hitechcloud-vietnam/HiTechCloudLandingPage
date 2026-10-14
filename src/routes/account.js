@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const express = require('express');
+const { handler } = require('../http');
 const { hashPassword, verifyPassword, requireUser } = require('../auth');
 const { HttpError } = require('../access');
 const { transaction } = require('../db');
@@ -57,14 +58,7 @@ function createAccountRouter({ db, config, mailer, sessions }) {
   const r = express.Router();
   const forgotLimiter = createRateLimiter({ windowMs: 3600_000, max: 5 });
 
-  const h = (fn) => (req, res, next) => {
-    Promise.resolve()
-      .then(() => fn(req, res))
-      .then((out) => {
-        if (out !== undefined && !res.headersSent) res.json(out);
-      })
-      .catch(next);
-  };
+  const h = handler;
 
   r.post('/auth/forgot', h(async (req) => {
     if (!forgotLimiter(req.ip)) throw new HttpError(429, 'Bạn thao tác quá nhanh, vui lòng thử lại sau');

@@ -171,11 +171,16 @@ function migrate(db) {
   add('pages', 'og_image', "TEXT NOT NULL DEFAULT ''");
   add('sites', 'domain_token', 'TEXT');
   add('sites', 'domain_verified_at', 'TEXT');
+  add('sites', 'domain_claimed_at', 'TEXT');
   add('workspaces', 'expiry_notice', 'TEXT');
   add('leads', 'status', "TEXT NOT NULL DEFAULT 'new'");
   add('leads', 'note', "TEXT NOT NULL DEFAULT ''");
   add('leads', 'source_json', "TEXT NOT NULL DEFAULT '{}'");
   add('leads', 'page_id', 'INTEGER');
+  add('leads', 'ab_test_id', 'INTEGER');
+  add('leads', 'ab_bucket', 'TEXT');
+  add('ab_tests', 'views_a', 'INTEGER NOT NULL DEFAULT 0');
+  add('ab_tests', 'views_b', 'INTEGER NOT NULL DEFAULT 0');
 }
 
 // Runs fn inside a transaction, rolling back on error.
