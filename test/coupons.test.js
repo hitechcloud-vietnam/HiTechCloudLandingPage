@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const payosLib = require('../src/payments/payos');
-const { startServer, client } = require('./helpers');
+const { startServer, client, verifyEmail } = require('./helpers');
 
 const PAYOS = { clientId: 'cid', apiKey: 'key', checksumKey: 'payos-checksum' };
 
@@ -44,6 +44,7 @@ test('coupons', async (t) => {
   await root('POST', '/api/auth/signup', { name: 'Root', email: 'root@hitechcloud.vn', password: 'matkhau123' });
   const owner = client(base);
   await owner('POST', '/api/auth/signup', { name: 'Owner', email: 'owner@example.com', password: 'matkhau123' });
+  verifyEmail(db, 'owner@example.com');
   const wsId = (await owner('GET', '/api/auth/me')).data.workspaces[0].id;
   const wsRow = () => db.prepare('SELECT * FROM workspaces WHERE id = ?').get(wsId);
   const coupon = (code) => db.prepare('SELECT * FROM coupons WHERE code = ?').get(code);
