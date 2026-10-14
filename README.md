@@ -57,6 +57,8 @@ Các biến cấu hình nằm trong `.env.example`.
 
 ## Triển khai production (docker-compose + Caddy)
 
+> Hướng dẫn chi tiết từng bước (chuẩn bị máy chủ, DNS, `.env`, SMTP, thanh toán, S3, HTTPS/wildcard, sao lưu & khôi phục, cập nhật, chạy không dùng Docker, giám sát, bảo mật, checklist go-live, xử lý sự cố): **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+
 ```bash
 cp .env.example .env      # điền APP_URL, APP_DOMAIN, PUBLISH_ROOT_DOMAIN, SMTP_URL, khóa payOS/Pay2S…
 docker compose up -d --build
