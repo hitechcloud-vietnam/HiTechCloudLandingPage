@@ -23,7 +23,10 @@ function rewriteForms(html, siteId, pageSlug) {
   });
 }
 
-const BRANDING = `<a href="https://hitechcloud.vn" target="_blank" rel="noopener" style="position:fixed;right:12px;bottom:12px;z-index:2147483647;background:#0f172a;color:#fff;font:12px/1 system-ui,sans-serif;padding:8px 12px;border-radius:999px;text-decoration:none;opacity:.85">Tạo bởi HiTechCloud</a>`;
+// Tiny runtime for countdown blocks (data-htc-countdown="<ISO deadline>").
+const COUNTDOWN_JS = `<script>(function(){var els=document.querySelectorAll('[data-htc-countdown]');if(!els.length)return;function pad(n){return(n<10?'0':'')+n}function tick(){var now=Date.now();els.forEach(function(el){var t=Date.parse(el.getAttribute('data-htc-countdown'));var d=Math.max(0,Math.floor(((isNaN(t)?now:t)-now)/1000));var v={d:Math.floor(d/86400),h:Math.floor(d%86400/3600),m:Math.floor(d%3600/60),s:d%60};Object.keys(v).forEach(function(k){var b=el.querySelector('[data-unit="'+k+'"]');if(b)b.textContent=pad(v[k])})})}tick();setInterval(tick,1000)})();</script>`;
+
+const BRANDING = `<a href="https://hitechcloud.vn" target="_blank" rel="noopener" style="position:fixed;left:12px;bottom:12px;z-index:2147483647;background:#0f172a;color:#fff;font:12px/1 system-ui,sans-serif;padding:8px 12px;border-radius:999px;text-decoration:none;opacity:.85">Tạo bởi HiTechCloud</a>`;
 
 function renderPage({ page, site, html, css, showBranding, notice, settings = {}, canonicalUrl = '' }) {
   const safeCss = String(css || '').replace(/<\/style/gi, '<\\/style');
@@ -53,6 +56,7 @@ ${head}
 ${notice ? `<div style="background:#16a34a;color:#fff;text-align:center;padding:12px;font-family:system-ui,sans-serif">${escapeHtml(notice)}</div>` : ''}
 ${body}
 ${showBranding ? BRANDING : ''}
+${body.includes('data-htc-countdown') ? COUNTDOWN_JS : ''}
 ${notice ? leadEvents(settings) : ''}
 ${settings.customBody || ''}
 </body>
