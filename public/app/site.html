@@ -5,6 +5,45 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Website · HiTechCloud LandingPage</title>
 <link rel="stylesheet" href="/assets/app.css">
+<style>
+/* Analytics tab */
+.an-head { margin-bottom: 16px; }
+.an-range { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.an-range button { border: 0; background: none; padding: 7px 12px; font: inherit; font-size: 14px; color: var(--text); cursor: pointer; }
+.an-range button + button { border-left: 1px solid var(--border); }
+.an-range button[aria-pressed="true"] { background: var(--primary); color: #fff; font-weight: 600; }
+.an-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.an-kpi { padding: 14px 16px; }
+.an-kpi .an-value { font-size: 26px; font-weight: 700; display: block; line-height: 1.2; margin: 2px 0; font-variant-numeric: tabular-nums; }
+.an-delta { font-size: 13px; color: var(--muted); }
+.an-up { color: #166534; font-weight: 600; }
+.an-down { color: #991b1b; font-weight: 600; }
+.an-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--muted); }
+.an-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.an-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.an-readout { font-size: 13px; color: var(--muted); min-height: 20px; font-variant-numeric: tabular-nums; }
+.an-chart { width: 100%; min-width: 0; }
+.an-chart svg { display: block; width: 100%; height: auto; font: 11px Inter, system-ui, sans-serif; touch-action: pan-y; }
+.an-chart .an-axis { fill: var(--muted); }
+.an-chart .an-grid { stroke: #e2e8f0; stroke-width: 1; }
+.an-chart .an-hit { fill: transparent; cursor: crosshair; }
+.an-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 16px; }
+.an-grid2 > * { min-width: 0; }
+.an-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.an-share { height: 6px; border-radius: 3px; background: #ea580c; margin-top: 4px; min-width: 2px; }
+.an-status { display: flex; gap: 2px; height: 14px; border-radius: 4px; overflow: hidden; background: #f1f5f9; margin: 12px 0; }
+.an-status > div { min-width: 2px; }
+.an-status-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; margin: 0; padding: 0; list-style: none; }
+.an-status-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 6px; }
+.an-card-title { margin: 0 0 8px; font-size: 16px; }
+@media (max-width: 520px) {
+  .an-kpis { grid-template-columns: 1fr 1fr; }
+  .an-kpi:last-child { grid-column: 1 / -1; }
+  .an-kpi .an-value { font-size: 22px; }
+  .an-grid2 { grid-template-columns: 1fr; }
+  [data-panel="analytics"] .card { padding: 14px; }
+}
+</style>
 </head>
 <body>
 <header class="topbar">
@@ -30,6 +69,7 @@
     <button class="active" data-tab="pages">Trang</button>
     <button data-tab="leads">Khách hàng tiềm năng</button>
     <button data-tab="abtests">A/B testing</button>
+    <button data-tab="analytics">Thống kê</button>
     <button data-tab="settings">Cài đặt</button>
   </div>
 
@@ -72,6 +112,54 @@
       </div>
     </form>
     <div id="ab-list" class="stack" style="margin-top:16px"></div>
+  </section>
+
+  <section data-panel="analytics" hidden>
+    <div class="row an-head">
+      <div class="an-range" role="group" aria-label="Khoảng thời gian" id="an-range">
+        <button type="button" data-days="7" aria-pressed="false">7 ngày</button>
+        <button type="button" data-days="30" aria-pressed="true">30 ngày</button>
+        <button type="button" data-days="90" aria-pressed="false">90 ngày</button>
+      </div>
+      <span class="muted" id="an-period"></span>
+    </div>
+    <div class="an-kpis" id="an-kpis"></div>
+    <div class="card stack">
+      <div class="row">
+        <h3 class="an-card-title" style="margin:0">Lượt xem &amp; lead theo ngày</h3>
+        <div class="an-legend" id="an-legend"></div>
+      </div>
+      <div class="an-readout" id="an-readout" aria-live="polite"></div>
+      <div class="an-chart" id="an-chart"></div>
+      <details>
+        <summary class="muted" style="cursor:pointer">Xem dữ liệu dạng bảng</summary>
+        <div class="table-wrap" style="max-height:320px;overflow-y:auto;margin-top:8px"><table>
+          <thead><tr><th>Ngày</th><th class="an-num">Lượt xem</th><th class="an-num">Lead</th></tr></thead>
+          <tbody id="an-days"></tbody>
+        </table></div>
+      </details>
+    </div>
+    <div class="an-grid2">
+      <div class="card">
+        <h3 class="an-card-title">Trang hiệu quả nhất</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Trang</th><th class="an-num">Lượt xem</th><th class="an-num">Lead</th><th class="an-num">Tỉ lệ</th></tr></thead>
+          <tbody id="an-pages"></tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <h3 class="an-card-title">Nguồn khách hàng</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Nguồn</th><th class="an-num">Lead</th></tr></thead>
+          <tbody id="an-sources"></tbody>
+        </table></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h3 class="an-card-title">Trạng thái lead</h3>
+      <div class="an-status" id="an-status" role="img"></div>
+      <ul class="an-status-legend" id="an-status-legend"></ul>
+    </div>
   </section>
 
   <section data-panel="settings" hidden>
@@ -386,6 +474,207 @@ $('#page-form').onsubmit = async (e) => {
 };
 
 load().catch(showError);
+</script>
+<script>
+// Analytics tab: KPI tiles, daily chart (hand-written SVG), top pages, sources, status mix.
+(() => {
+  const AN_VIEWS = '#2563eb';
+  const AN_LEADS = '#ea580c';
+  const AN_STATUS = [
+    ['new', 'Mới', '#2563eb'], ['contacted', 'Đã liên hệ', '#64748b'], ['qualified', 'Tiềm năng', '#d97706'],
+    ['won', 'Thành công', '#16a34a'], ['lost', 'Thất bại', '#dc2626'],
+  ];
+  const fmt = (n) => Number(n).toLocaleString('vi-VN');
+  const pct = (n) => (n === null ? '—' : `${n.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}%`);
+  const dmy = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
+  const dm = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+  let days = 30;
+  let data = null;
+  let loaded = false;
+  let lastWidth = 0;
+
+  // Smallest of 1/2/5 x 10^k that is >= v.
+  function niceMax(v) {
+    if (v <= 1) return 1;
+    const step = 10 ** Math.floor(Math.log10(v));
+    return [1, 2, 5, 10].map((m) => m * step).find((m) => m >= v);
+  }
+
+  function delta(value, unit = '%') {
+    if (value === null) return '<span class="an-delta">Mới · kỳ trước chưa có dữ liệu</span>';
+    if (value === 0) return '<span class="an-delta">Không đổi so với kỳ trước</span>';
+    const up = value > 0;
+    const text = `${up ? '▲' : '▼'} ${Math.abs(value).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}${unit}`;
+    return `<span class="an-delta"><span class="${up ? 'an-up' : 'an-down'}">${text}</span> so với kỳ trước</span>`;
+  }
+
+  function renderKpis() {
+    const t = data.totals;
+    const p = t.previous;
+    const rateDelta = t.conversionRate === null || p.conversionRate === null ? null : Math.round((t.conversionRate - p.conversionRate) * 100) / 100;
+    const tile = (label, value, d, title) => `<div class="card an-kpi" title="${esc(title)}"><div class="muted">${label}</div><strong class="an-value">${value}</strong>${d}</div>`;
+    const prevRange = `Kỳ trước ${dmy(p.from)} – ${dmy(p.to)}`;
+    $('#an-kpis').innerHTML = [
+      tile('Lượt xem', fmt(t.views), delta(t.change.views), `${prevRange}: ${fmt(p.views)} lượt xem`),
+      tile('Lead', fmt(t.leads), delta(t.change.leads), `${prevRange}: ${fmt(p.leads)} lead`),
+      tile('Tỉ lệ chuyển đổi', pct(t.conversionRate),
+        rateDelta === null ? '<span class="an-delta">Chưa đủ dữ liệu để so sánh</span>' : delta(rateDelta, ' điểm %'),
+        `${prevRange}: ${pct(p.conversionRate)}`),
+    ].join('');
+  }
+
+  function resetReadout() {
+    $('#an-readout').textContent = 'Di chuột hoặc chạm vào biểu đồ để xem số liệu từng ngày.';
+  }
+
+  function renderChart() {
+    const box = $('#an-chart');
+    const W = Math.max(280, Math.round(box.clientWidth || 600));
+    lastWidth = W;
+    const s = data.series;
+    const n = s.length;
+    const vMax = niceMax(Math.max(...s.map((d) => d.views)));
+    const lMax = niceMax(Math.max(...s.map((d) => d.leads)));
+    const left = Math.max(28, fmt(vMax).length * 7 + 10);
+    const right = 8;
+    const vTop = 8;
+    const vH = W < 480 ? 120 : 160;
+    const lTop = vTop + vH + 26;
+    const lH = W < 480 ? 56 : 70;
+    const H = lTop + lH + 22;
+    const plotW = W - left - right;
+    const band = plotW / n;
+    const x = (i) => left + band * (i + 0.5);
+    const vy = (v) => vTop + vH - (v / vMax) * vH;
+    const ly = (v) => lTop + lH - (v / lMax) * lH;
+    const out = [];
+    const label = `Biểu đồ ${n} ngày từ ${dmy(data.from)} đến ${dmy(data.to)}: tổng ${fmt(data.totals.views)} lượt xem (đường phía trên) và ${fmt(data.totals.leads)} lead (cột phía dưới)`;
+    out.push(`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}"><title>${esc(label)}</title>`);
+
+    // Grid + y labels; each panel has its own scale (no dual axis).
+    const yTicks = (max, y) => {
+      const ticks = max % 2 === 0 || max >= 10 ? [0, max / 2, max] : [0, max];
+      for (const t of ticks) {
+        const yy = Math.round(y(t)) + 0.5;
+        out.push(`<line class="an-grid" x1="${left}" x2="${W - right}" y1="${yy}" y2="${yy}"/>`);
+        out.push(`<text class="an-axis" x="${left - 6}" y="${yy + 4}" text-anchor="end">${fmt(t)}</text>`);
+      }
+    };
+    yTicks(vMax, vy);
+    yTicks(lMax, ly);
+    out.push(`<text class="an-axis" x="${left}" y="${lTop - 9}" font-weight="600">Lead</text>`);
+
+    // Views: soft area + 2px line.
+    const pts = s.map((d, i) => `${x(i).toFixed(1)},${vy(d.views).toFixed(1)}`);
+    const base = vTop + vH;
+    out.push(`<path d="M${x(0).toFixed(1)},${base} L${pts.join(' L')} L${x(n - 1).toFixed(1)},${base} Z" fill="${AN_VIEWS}" fill-opacity="0.12"/>`);
+    out.push(`<path d="M${pts.join(' L')}" fill="none" stroke="${AN_VIEWS}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`);
+    if (band >= 16) {
+      s.forEach((d, i) => out.push(`<circle cx="${x(i).toFixed(1)}" cy="${vy(d.views).toFixed(1)}" r="3" fill="${AN_VIEWS}" stroke="#fff" stroke-width="1.5"/>`));
+    }
+
+    // Leads: bars with a 2px gap, rounded ends.
+    const bw = Math.max(1, Math.min(16, band - 2));
+    s.forEach((d, i) => {
+      if (!d.leads) return;
+      const y0 = ly(d.leads);
+      out.push(`<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${y0.toFixed(1)}" width="${bw.toFixed(1)}" height="${(lTop + lH - y0).toFixed(1)}" rx="${Math.min(2, bw / 2)}" fill="${AN_LEADS}"/>`);
+    });
+
+    // X labels: always the last day, spaced to fit the width.
+    const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(plotW / 52))));
+    for (let i = n - 1; i >= 0; i -= every) {
+      const anchor = i === n - 1 ? 'end' : x(i) - 20 < left ? 'start' : 'middle';
+      const xx = anchor === 'end' ? W - right : anchor === 'start' ? left : x(i);
+      out.push(`<text class="an-axis" x="${xx.toFixed(1)}" y="${H - 6}" text-anchor="${anchor}">${dm(s[i].day)}</text>`);
+    }
+
+    // Hover guide + per-day hit targets with native tooltips.
+    out.push(`<g id="an-hover" visibility="hidden" pointer-events="none"><line x1="0" x2="0" y1="${vTop}" y2="${lTop + lH}" stroke="#94a3b8" stroke-dasharray="3 3"/><circle r="4.5" fill="${AN_VIEWS}" stroke="#fff" stroke-width="2"/></g>`);
+    s.forEach((d, i) => {
+      out.push(`<rect class="an-hit" data-i="${i}" x="${(left + band * i).toFixed(1)}" y="${vTop}" width="${band.toFixed(2)}" height="${lTop + lH - vTop}"><title>${dmy(d.day)}: ${fmt(d.views)} lượt xem, ${fmt(d.leads)} lead</title></rect>`);
+    });
+    out.push('</svg>');
+    box.innerHTML = out.join('');
+
+    const hover = $('#an-hover', box);
+    const show = (i) => {
+      const d = s[i];
+      hover.setAttribute('visibility', 'visible');
+      hover.querySelector('line').setAttribute('transform', `translate(${x(i).toFixed(1)},0)`);
+      hover.querySelector('circle').setAttribute('cx', x(i).toFixed(1));
+      hover.querySelector('circle').setAttribute('cy', vy(d.views).toFixed(1));
+      $('#an-readout').innerHTML = `<b>${dmy(d.day)}</b> · ${fmt(d.views)} lượt xem · ${fmt(d.leads)} lead${d.views ? ` · chuyển đổi ${pct(Math.round((d.leads / d.views) * 10000) / 100)}` : ''}`;
+    };
+    const svg = box.querySelector('svg');
+    svg.addEventListener('pointerover', (e) => { if (e.target.dataset.i) show(Number(e.target.dataset.i)); });
+    svg.addEventListener('pointerleave', () => { hover.setAttribute('visibility', 'hidden'); resetReadout(); });
+  }
+
+  function renderTables() {
+    $('#an-legend').innerHTML = `<span><i style="background:${AN_VIEWS}"></i>Lượt xem</span><span><i style="background:${AN_LEADS}"></i>Lead</span>`;
+    $('#an-days').innerHTML = data.series.slice().reverse()
+      .map((d) => `<tr><td>${dmy(d.day)}</td><td class="an-num">${fmt(d.views)}</td><td class="an-num">${fmt(d.leads)}</td></tr>`).join('');
+
+    const pages = data.byPage.slice(0, 10);
+    $('#an-pages').innerHTML = pages.length
+      ? pages.map((p) => `<tr><td><strong>${esc(p.title)}</strong><div class="hint">/${p.slug === 'index' ? '' : esc(p.slug)}</div></td>
+          <td class="an-num">${fmt(p.views)}</td><td class="an-num">${fmt(p.leads)}</td><td class="an-num">${pct(p.rate)}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="muted">Chưa có lượt xem hoặc lead trong khoảng này.</td></tr>';
+
+    const total = data.bySource.reduce((a, x) => a + x.leads, 0);
+    $('#an-sources').innerHTML = data.bySource.length
+      ? data.bySource.slice(0, 10).map((x) => `<tr><td style="word-break:break-word">${esc(x.source)}
+          <div class="an-share" style="width:${((x.leads / total) * 100).toFixed(1)}%"></div></td>
+          <td class="an-num">${fmt(x.leads)} <span class="hint">(${Math.round((x.leads / total) * 100)}%)</span></td></tr>`).join('')
+      : '<tr><td colspan="2" class="muted">Chưa có lead trong khoảng này.</td></tr>';
+
+    const st = data.byStatus;
+    const sum = Object.values(st).reduce((a, b) => a + b, 0);
+    const bar = $('#an-status');
+    bar.setAttribute('aria-label', sum ? AN_STATUS.map(([k, name]) => `${name}: ${st[k]}`).join(', ') : 'Chưa có lead');
+    bar.innerHTML = AN_STATUS.filter(([k]) => st[k])
+      .map(([k, name, color]) => `<div style="flex:${st[k]} 1 0;background:${color}" title="${name}: ${st[k]}"></div>`).join('');
+    $('#an-status-legend').innerHTML = AN_STATUS.map(([k, name, color]) =>
+      `<li><i style="background:${color}"></i>${name}: <strong>${fmt(st[k])}</strong>${sum ? ` <span class="muted">(${Math.round((st[k] / sum) * 100)}%)</span>` : ''}</li>`).join('');
+  }
+
+  async function loadAnalytics() {
+    showError();
+    $('#an-period').textContent = 'Đang tải…';
+    try {
+      data = await api(`/sites/${siteId}/analytics?days=${days}`);
+      $('#an-period').textContent = `${dmy(data.from)} – ${dmy(data.to)} (UTC)`;
+      renderKpis();
+      renderTables();
+      resetReadout();
+      renderChart();
+      loaded = true;
+    } catch (err) {
+      $('#an-period').textContent = '';
+      showError(err);
+    }
+  }
+
+  $('#an-range').onclick = (e) => {
+    const d = Number(e.target.dataset.days);
+    if (!d || d === days) return;
+    days = d;
+    $('#an-range').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.days) === days)));
+    loadAnalytics();
+  };
+  document.querySelector('.tabs [data-tab="analytics"]').addEventListener('click', () => { if (!loaded) loadAnalytics(); });
+
+  // Redraw at the new pixel width so text keeps its size.
+  let resizeTimer;
+  new ResizeObserver(() => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const w = Math.round($('#an-chart').clientWidth);
+      if (data && w && Math.abs(w - lastWidth) > 4) renderChart();
+    }, 120);
+  }).observe($('#an-chart'));
+})();
 </script>
 </body>
 </html>

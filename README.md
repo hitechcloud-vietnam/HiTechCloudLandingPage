@@ -18,7 +18,7 @@ Lõi trình thiết kế dùng [GrapesJS](https://github.com/GrapesJS/grapesjs).
 | Gói dịch vụ | Miễn phí / Pro / Business, giới hạn số website, trang, thành viên, lead/tháng, tên miền riêng, gỡ nhãn "Tạo bởi HiTechCloud" |
 | Thanh toán | **payOS** (VietQR) và **Pay2S**. Thanh toán theo chu kỳ 1 tháng hoặc 12 tháng (tặng 2 tháng). Gói tự hết hạn và quay về gói Miễn phí. Gia hạn được cộng dồn vào thời gian còn lại. Webhook xác thực chữ ký HMAC, xử lý trùng lặp an toàn (idempotent) và đối chiếu số tiền |
 | Quản trị nền tảng | `/app/admin`: số người dùng, workspace trả phí, MRR, doanh thu, danh sách khách hàng, lịch sử giao dịch, cấp gói thủ công |
-| Thống kê | Lượt xem trang 30 ngày (bỏ qua bot), số lead và tỉ lệ chuyển đổi theo từng trang |
+| Thống kê | Tab “Thống kê” cho từng website: chọn 7/30/90 ngày, lượt xem (bỏ qua bot), lead, tỉ lệ chuyển đổi và % thay đổi so với kỳ trước; biểu đồ theo ngày, trang hiệu quả nhất, nguồn khách hàng (UTM, website giới thiệu, trực tiếp) và trạng thái lead |
 | Tích hợp marketing | Google Analytics 4, Google Tag Manager, Facebook Pixel, TikTok Pixel. Sự kiện chuyển đổi (Lead) gửi tự động khi khách điền form. Favicon, og:image, canonical, `sitemap.xml`, `robots.txt`. Chèn mã tùy chỉnh vào `<head>`/`<body>` (gói Pro trở lên) |
 | Thông báo lead | Email (chủ sở hữu, quản trị viên và tối đa 5 địa chỉ khác), webhook có ký HMAC (Zapier/Make/n8n/CRM, chặn gửi tới địa chỉ nội bộ để chống SSRF), Telegram bot. Có nút gửi thông báo thử |
 | Thư viện ảnh | Tải ảnh PNG/JPEG/GIF/WEBP vào editor. Kiểm tra định dạng bằng nội dung file. Dung lượng theo gói: 50 MB / 2 GB / 10 GB |
@@ -149,6 +149,7 @@ test/                Test API bằng node:test
 | GET/POST/DELETE | `/api/workspaces/:id/assets`, `/api/assets/:id` | Thư viện ảnh (body là ảnh thô, `Content-Type: image/*`) |
 | GET/POST | `/api/pages/:id/versions[/:vid/restore]`, `/api/pages/:id/duplicate` | Lịch sử phiên bản, nhân bản trang |
 | GET/POST | `/api/sites/:id/ab-tests`, `/api/ab-tests/:id/stop` | A/B testing |
+| GET | `/api/sites/:id/analytics?days=7\|30\|90` | Thống kê: chuỗi theo ngày, tổng và so sánh kỳ trước, theo trang, nguồn, trạng thái |
 
 ## Lộ trình tiếp theo
 
