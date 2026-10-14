@@ -237,7 +237,7 @@ openssl rand -hex 32   # dùng cho METRICS_TOKEN
 | `SUPERADMIN_EMAILS` | `admin@congty.vn,ops@congty.vn` | Email tài khoản quản trị nền tảng (vào `/app/admin`), phân tách bằng dấu phẩy |
 | `SMTP_URL` | `smtps://user:pass@smtp.example.com:465` | Máy chủ gửi email (mục 9). Để trống thì email chỉ được in ra log |
 | `MAIL_FROM` | `HiTechCloud <no-reply@hitechcloud.vn>` | Người gửi email |
-| `LEAD_SECRET` | 64 ký tự hex | Khóa HMAC ký dấu thời gian trong form chống bot. Để trống thì hệ thống dẫn xuất từ khóa thanh toán/SMTP hoặc tự sinh và lưu ở `/data/lead-secret`. **Nên đặt cố định** |
+| `LEAD_SECRET` | 64 ký tự hex | Khóa HMAC ký dấu thời gian trong form chống bot và ký liên kết hủy nhận email. Để trống thì hệ thống dẫn xuất từ khóa thanh toán/SMTP hoặc tự sinh và lưu ở `/data/lead-secret`. **Bắt buộc đặt cố định ở production**: nếu để trống, khi đổi khóa thanh toán/SMTP các liên kết hủy nhận email đã gửi sẽ hết hiệu lực |
 
 **Do docker-compose đặt sẵn (không cần sửa)**
 
@@ -275,6 +275,12 @@ openssl rand -hex 32   # dùng cho METRICS_TOKEN
 | `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Khóa truy cập |
 | `S3_PUBLIC_URL` | URL công khai/CDN để trình duyệt tải ảnh |
 | `S3_FORCE_PATH_STYLE` | `true` cho MinIO và nhiều nhà cung cấp trong nước |
+
+**Zalo OA (thông báo lead qua Zalo)**
+
+| Biến | Ý nghĩa |
+|---|---|
+| `ZALO_APP_ID`, `ZALO_APP_SECRET` | Ứng dụng Zalo for Developers của nền tảng (https://developers.zalo.me). Để trống thì kênh Zalo OA bị tắt. Mỗi website tự nhập refresh token của OA và ID người nhận trong Cài đặt website (xem README, mục "Zalo OA") |
 
 **Giám sát (mục 16)**
 
@@ -352,6 +358,7 @@ Database được tạo và **migrate tự động** mỗi lần ứng dụng kh
 6. **Điền thông tin pháp lý:** thay các chỗ `[...]` trong `public/terms.html`, `public/privacy.html`, `public/refund.html`, `public/contact.html`, trang chủ (`public/index.html`) và JSON-LD (xem README, mục "Trang pháp lý"). Nhờ luật sư rà soát rồi xóa khối `<div class="legal-notice">`. Sau khi sửa, build lại: `docker compose up -d --build`.
 7. **Thay tên miền mẫu** `https://hitechcloud.vn` trong thẻ canonical/Open Graph, `public/robots.txt`, `public/sitemap.xml` nếu tên miền thật khác.
 8. **Bật sao lưu tự động** (mục 13) và **giám sát** (mục 16).
+9. **Email vòng đời** chạy tự động trong tiến trình nền mỗi giờ: email chào mừng ngay khi đăng ký, email nhắc xuất bản trang sau 3 ngày, email tóm tắt lead sáng thứ Hai (08:00 giờ Việt Nam). Không cần cấu hình thêm ngoài SMTP và `LEAD_SECRET` cố định. Ứng dụng phải chạy liên tục (không tắt vào sáng thứ Hai) để tóm tắt tuần được gửi.
 
 ## 9. Email (SMTP)
 
@@ -402,7 +409,7 @@ Gói được kích hoạt khi payOS gửi webhook. Nếu webhook đến chậm,
 - Webhook phải đến được `APP_URL` qua HTTPS với chứng chỉ hợp lệ.
 - Đơn chưa thanh toán sau 1 ngày tự chuyển sang "đã hủy" (job nền).
 - Nâng/hạ gói giữa kỳ được tính theo tỷ lệ thời gian còn lại.
-- Hóa đơn VAT: xem README (khi tính năng yêu cầu xuất hóa đơn được gộp).
+- **Hóa đơn VAT:** ứng dụng chưa kết nối API nhà cung cấp hóa đơn điện tử. Khách nhập *Thông tin xuất hóa đơn* (tên đơn vị, mã số thuế, địa chỉ, email) và gửi yêu cầu cho từng đơn đã thanh toán (hoặc bật tự động). Kế toán vào `/app/admin` → tab **Hóa đơn VAT**, xuất CSV, phát hành trên phần mềm hóa đơn điện tử (MISA/VNPT/Viettel…), rồi bấm **Đã xuất** để nhập số hóa đơn và mã tra cứu; khách nhận email kèm thông tin tra cứu. Phân công người kiểm tra tab này hằng ngày vì chưa có email báo khi có yêu cầu mới.
 
 ## 11. Lưu trữ ảnh trên S3
 
@@ -802,6 +809,9 @@ Việc của người vận hành:
 - [ ] Đã thử: đăng ký → xác minh email → tạo website → xuất bản → gửi form → nhận lead và email thông báo.
 - [ ] Thanh toán payOS thật với số tiền nhỏ thành công; Pay2S đã thử trên sandbox trước khi bật production.
 - [ ] Tài khoản quản trị vào được `/app/admin`.
+- [ ] `LEAD_SECRET` đã đặt cố định.
+- [ ] Đã phân công người xử lý tab **Hóa đơn VAT** và **An toàn nội dung** trong `/app/admin`.
+- [ ] (Nếu dùng Zalo OA) đã đặt `ZALO_APP_ID`/`ZALO_APP_SECRET` và bấm **Gửi thử Zalo** thành công trên một website thử.
 
 **Pháp lý (Việt Nam)**
 - [ ] Điền đủ thông tin doanh nghiệp (mã số thuế, địa chỉ, người đại diện, số điện thoại) trong `/contact`, `/terms`, `/privacy`, `/refund`, chân trang và JSON-LD.
@@ -824,6 +834,8 @@ Việc của người vận hành:
 | Email vào thư rác | Thiếu SPF/DKIM/DMARC; `MAIL_FROM` khác tên miền đã xác thực | Mục 9 |
 | Thanh toán xong gói không đổi | Webhook không tới (sai URL, chứng chỉ lỗi), sai `PAYOS_CHECKSUM_KEY` | Kiểm tra lịch sử webhook trên payOS; log `app` có dòng lỗi chữ ký; khách quay về `/billing/return/payos` để ứng dụng tự kiểm tra lại |
 | Form trên trang khách báo "phiên đã hết hạn" | Trang mở quá 24 giờ, hoặc `LEAD_SECRET` vừa đổi | Tải lại trang rồi gửi lại |
+| Zalo OA báo "không làm mới được access token" | Refresh token của OA hết hạn, đã dùng ở nơi khác, hoặc chuỗi token bị đứt khi mất kết nối lúc làm mới | Chủ website lấy refresh token mới (README, mục "Zalo OA") và dán lại vào Cài đặt website, bấm **Gửi thử Zalo** |
+| Liên kết hủy nhận email báo không hợp lệ | `LEAD_SECRET` để trống và khóa dẫn xuất đã đổi (đổi khóa thanh toán/SMTP) | Đặt `LEAD_SECRET` cố định; người dùng tắt email trong **Cài đặt → Email** |
 | Form trên `/p/…` không gửi được | Website bật Turnstile; đường dẫn xem trước không qua được Turnstile | Thử trên tên miền con/tên miền riêng |
 | Lead bị đánh dấu Spam | Gửi quá nhanh sau khi tải trang (< 2 giây), nhiều link, từ khóa spam | Xem lý do trong lead; chuyển trạng thái nếu nhầm |
 | Website trả 451 | Website hoặc tài khoản chủ sở hữu bị tạm ngưng (tự động hoặc bởi quản trị) | `/app/admin` → An toàn nội dung → danh sách đang tạm ngưng |
