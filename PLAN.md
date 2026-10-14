@@ -5,7 +5,8 @@ Kế hoạch và trạng thái công việc. Mỗi việc chưa xong có một f
 ## Trạng thái hiện tại
 
 - Nhánh phát hành: `main`. CI (GitHub Actions) chạy cho mọi PR và mỗi lần push lên `main`: test đơn vị/API trên Node 22 và 24 (`npm test`), E2E Playwright trên desktop + mobile (`npm run e2e`), build Docker, CodeQL.
-- Triển khai: thủ công theo [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) (Docker Compose + Caddy). Triển khai tự động: việc 14.
+- Phát hành: cập nhật `CHANGELOG.md` và `version` trong `package.json`, gộp vào `main`, rồi tạo tag: `git tag -a v1.0.1 -m "v1.0.1" && git push origin v1.0.1`. Workflow `release.yml` chạy test, tạo GitHub Release và đẩy image `ghcr.io/hitechcloud-vietnam/hitechcloudlandingpage:<tag>`.
+- Triển khai: thủ công theo [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) (Docker Compose + Caddy). Triển khai tự động lên máy chủ: việc 14.
 - Mô tả tính năng và API: [README.md](README.md).
 
 ## Việc chưa xong

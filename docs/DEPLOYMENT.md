@@ -205,7 +205,7 @@ git checkout main          # nhánh phát hành
 git log --oneline -1       # ghi lại commit đang triển khai
 ```
 
-Nên triển khai từ một **tag phát hành** (vd `git checkout v1.0.0`) để dễ quay lui (mục 14).
+Nên triển khai từ một **tag phát hành** (vd `git checkout v1.0.0`) để dễ quay lui (mục 14). Danh sách phiên bản và ghi chú: trang **Releases** của repo và `CHANGELOG.md`. Mỗi tag cũng có image dựng sẵn `ghcr.io/hitechcloud-vietnam/hitechcloudlandingpage:<tag>`; hiện `docker-compose.yml` vẫn build từ mã nguồn (dùng image dựng sẵn: xem `docs/todo/14-continuous-deployment.md`).
 
 ## 6. Cấu hình biến môi trường (.env)
 
