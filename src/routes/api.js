@@ -7,6 +7,7 @@ const { addMonths } = require('../billing');
 const { createRateLimiter } = require('../ratelimit');
 const { acceptInvitation, createInvitation } = require('./account');
 const siteSettings = require('../siteSettings');
+const { snapshotVersion } = require('./content');
 const { transaction } = require('../db');
 const { PLANS, workspacePlan, effectivePlanId, publicPlan } = require('../plans');
 const { renderTemplate, listTemplates, listBlocks, BASE_CSS } = require('../templates');
@@ -481,7 +482,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   r.get('/pages/:pid', h((req) => {
     const { page, site, role } = access.page(req.user, req.params.pid);
     const { project_json, draft_html, draft_css, published_html, published_css, ...meta } = page;
-    return { ...meta, role, site: { id: site.id, name: site.name, subdomain: site.subdomain, custom_domain: site.custom_domain } };
+    return { ...meta, role, site: { id: site.id, workspace_id: site.workspace_id, name: site.name, subdomain: site.subdomain, custom_domain: site.custom_domain } };
   }));
 
   r.patch('/pages/:pid', h((req) => {
@@ -543,6 +544,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
 
   r.post('/pages/:pid/publish', h((req) => {
     const { page } = access.page(req.user, req.params.pid);
+    snapshotVersion(db, page.id, req.user.id);
     db.prepare("UPDATE pages SET published_html = draft_html, published_css = draft_css, published_at = datetime('now') WHERE id = ?").run(page.id);
     return { ok: true, publishedAt: db.prepare('SELECT published_at FROM pages WHERE id = ?').get(page.id).published_at };
   }));

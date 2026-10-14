@@ -16,6 +16,7 @@ const config = {
   // Published sites are served at <subdomain>.<publishRootDomain>, e.g. shop.hitechcloud.site
   publishRootDomain: (process.env.PUBLISH_ROOT_DOMAIN || '').toLowerCase(),
   dbFile: process.env.DB_FILE || path.join(__dirname, '..', 'data', 'hitechcloud.db'),
+  uploadsDir: process.env.UPLOADS_DIR || path.join(__dirname, '..', 'data', 'uploads'),
   superAdmins: list(process.env.SUPERADMIN_EMAILS),
   sessionDays: Number(process.env.SESSION_DAYS || 30),
   secureCookies: process.env.NODE_ENV === 'production',

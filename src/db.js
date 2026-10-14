@@ -110,6 +110,28 @@ CREATE TABLE IF NOT EXISTS invitations (
   UNIQUE (workspace_id, email)
 );
 
+CREATE TABLE IF NOT EXISTS assets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  path TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS page_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+  html TEXT NOT NULL,
+  css TEXT NOT NULL,
+  project_json TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_assets_workspace ON assets(workspace_id, id);
+CREATE INDEX IF NOT EXISTS idx_versions_page ON page_versions(page_id, id);
 CREATE INDEX IF NOT EXISTS idx_orders_workspace ON orders(workspace_id, id);
 CREATE INDEX IF NOT EXISTS idx_leads_site ON leads(site_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
