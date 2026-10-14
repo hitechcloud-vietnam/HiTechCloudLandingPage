@@ -19,6 +19,9 @@ const FLAG_THRESHOLD = 45;
 // Score at which a page with a password field AND a bank/e-wallet brand is auto-suspended.
 const AUTO_SUSPEND_THRESHOLD = 60;
 const AUTO_REASON = 'Tự động: trang có dấu hiệu lừa đảo/giả mạo ngân hàng, đang chờ quản trị viên xem xét';
+// Set on the sites of a suspended account, so unsuspending the account restores exactly those.
+const OWNER_REASON = 'Tài khoản chủ sở hữu đã bị tạm ngưng do vi phạm điều khoản sử dụng';
+const OWNED_SITES = "workspace_id IN (SELECT workspace_id FROM memberships WHERE user_id = ? AND role = 'owner')";
 
 // Banks, e-wallets and payment brands commonly impersonated in Vietnam (ASCII, lowercase).
 const BRANDS = [
@@ -177,6 +180,8 @@ function createSafety({ db, config = {}, mailer }) {
     if ((config.superAdmins || []).includes(user.email.toLowerCase())) throw new HttpError(400, 'Không thể tạm ngưng tài khoản quản trị nền tảng');
     db.prepare("UPDATE users SET suspended_at = datetime('now'), suspended_reason = ? WHERE id = ?").run(reason, user.id);
     db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id);
+    // The account's own sites go offline too; sites already suspended keep their reason.
+    db.prepare(`UPDATE sites SET suspended_at = datetime('now'), suspended_reason = ? WHERE suspended_at IS NULL AND ${OWNED_SITES}`).run(OWNER_REASON, user.id);
     send(
       user.email,
       'Tài khoản HiTechCloud của bạn đã bị tạm ngưng',
@@ -189,6 +194,7 @@ function createSafety({ db, config = {}, mailer }) {
     if (!user) throw new HttpError(404, 'Không tìm thấy người dùng');
     if (!user.suspended_at) return;
     db.prepare('UPDATE users SET suspended_at = NULL, suspended_reason = NULL WHERE id = ?').run(user.id);
+    db.prepare(`UPDATE sites SET suspended_at = NULL, suspended_reason = NULL WHERE suspended_reason = ? AND ${OWNED_SITES}`).run(OWNER_REASON, user.id);
     send(user.email, 'Tài khoản HiTechCloud của bạn đã được khôi phục', `Tài khoản ${user.email} đã được gỡ tạm ngưng. Bạn có thể đăng nhập lại.`);
   }
 
@@ -232,6 +238,7 @@ module.exports = {
   FLAG_THRESHOLD,
   AUTO_SUSPEND_THRESHOLD,
   AUTO_REASON,
+  OWNER_REASON,
   scanPage,
   suspendedPage,
   assertSiteActive,

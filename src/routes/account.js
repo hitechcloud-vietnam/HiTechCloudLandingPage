@@ -7,6 +7,8 @@ const { hashPassword, verifyPassword, requireUser, SESSION_COOKIE } = require('.
 const { HttpError, createAccess } = require('../access');
 const { transaction } = require('../db');
 const { createRateLimiter } = require('../ratelimit');
+const { workspaceAssetKeys, removeObjects } = require('../storage');
+const { logger } = require('../logger');
 
 const RESET_TTL_MS = 60 * 60 * 1000;
 const INVITE_TTL_MS = 7 * 86400_000;
@@ -148,7 +150,7 @@ function createInvitation(db, { workspaceId, email, role, invitedBy }) {
   return token;
 }
 
-function createAccountRouter({ db, config, mailer, sessions }) {
+function createAccountRouter({ db, config, mailer, sessions, storage }) {
   const r = express.Router();
   const forgotLimiter = createRateLimiter({ windowMs: 3600_000, max: 5 });
   const resendLimiter = createRateLimiter({ windowMs: 3600_000, max: 3 });
@@ -280,13 +282,15 @@ function createAccountRouter({ db, config, mailer, sessions }) {
       );
     }
     // Owned workspaces cascade to sites, pages, leads, orders…; the user row
-    // cascades to sessions, memberships and tokens.
+    // cascades to sessions, memberships and tokens. Uploaded files go afterwards.
+    const assetKeys = workspaceAssetKeys(db, owned.map((w) => w.id));
     transaction(db, () => {
       const delWorkspace = db.prepare('DELETE FROM workspaces WHERE id = ?');
       for (const w of owned) delWorkspace.run(w.id);
       db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
     });
     res.clearCookie(SESSION_COOKIE, { path: '/' });
+    if (storage) await removeObjects(storage, assetKeys, req.log || logger);
     await mailer.send({
       to: user.email,
       subject: 'Tài khoản HiTechCloud của bạn đã được xóa',

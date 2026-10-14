@@ -233,3 +233,17 @@ test('public API v1: rate limit per key', async (t) => {
   // Limits are per key.
   assert.equal((await bearer(base, key2)('GET', '/sites')).status, 200);
 });
+
+test('publishing through the API needs a verified email, like the dashboard', async (t) => {
+  const { server, base, db } = await startServer();
+  t.after(() => server.close());
+  const { c, wsId, page } = await setupWorkspace(base, db, 'xacminh@example.com', 'xacminh');
+  const key = (await c('POST', `/api/workspaces/${wsId}/api-keys`, { name: 'CI' })).data.key;
+  const api = bearer(base, key);
+  db.prepare("UPDATE users SET email_verified_at = NULL WHERE email = 'xacminh@example.com'").run();
+  const r = await api('POST', `/pages/${page.id}/publish`);
+  assert.equal(r.status, 403);
+  assert.match(r.data.error, /xác minh email/);
+  verifyEmail(db, 'xacminh@example.com');
+  assert.equal((await api('POST', `/pages/${page.id}/publish`)).status, 200);
+});

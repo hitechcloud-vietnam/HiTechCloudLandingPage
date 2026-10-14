@@ -7,6 +7,7 @@ const { requireUser } = require('../auth');
 const { transaction } = require('../db');
 const { workspacePlanById } = require('../plans');
 const { snapshotVersion } = require('./content');
+const { createSafety } = require('../safety');
 
 // Normal CDF via Abramowitz–Stegun erf approximation (enough for a confidence readout).
 function normalCdf(z) {
@@ -27,7 +28,8 @@ function confidence(convA, viewsA, convB, viewsB) {
   return Math.round((2 * normalCdf(z) - 1) * 1000) / 10;
 }
 
-function createAbRouter({ db, access }) {
+function createAbRouter({ db, access, config, mailer }) {
+  const safety = createSafety({ db, config, mailer });
   const r = express.Router();
   r.use(requireUser);
 
@@ -97,6 +99,8 @@ function createAbRouter({ db, access }) {
         ).run(test.variant_page_id, test.page_id);
       }
     });
+    // The variant was scanned at its own URL; its content now serves the original URL too.
+    if (winner === 'b') safety.onPublish(test.page_id);
     return view(db.prepare('SELECT * FROM ab_tests WHERE id = ?').get(test.id));
   }));
 

@@ -134,4 +134,21 @@ function createStorage(config) {
   return createLocalStorage(config);
 }
 
-module.exports = { createStorage, signV4, CACHE_CONTROL };
+// Asset keys of the given workspaces; read before deleting the rows, which cascade.
+function workspaceAssetKeys(db, workspaceIds) {
+  const q = db.prepare('SELECT path FROM assets WHERE workspace_id = ?');
+  return workspaceIds.flatMap((id) => q.all(id).map((a) => a.path));
+}
+
+// Best-effort removal after the database rows are gone: a failure is logged, never thrown.
+async function removeObjects(storage, keys, log) {
+  for (const key of keys) {
+    try {
+      await storage.remove(key);
+    } catch (err) {
+      log.warn('Asset removal failed', { key, err });
+    }
+  }
+}
+
+module.exports = { createStorage, signV4, CACHE_CONTROL, workspaceAssetKeys, removeObjects };

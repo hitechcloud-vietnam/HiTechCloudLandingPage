@@ -18,6 +18,7 @@ const { logger, requestLogger } = require('./logger');
 const { createMetrics } = require('./metrics');
 const { createErrorReporter } = require('./errors');
 const { createSafetyRouter } = require('./routes/safety');
+const { createStorage } = require('./storage');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -30,6 +31,7 @@ function createApp({ db, config }) {
   const access = createAccess(db);
   const appOrigin = new URL(config.appUrl).origin;
   const uploadsDir = config.uploadsDir || path.join(ROOT, 'data', 'uploads');
+  const storage = config.storage || createStorage({ ...config, uploadsDir });
 
   const mailer = config.mailer || createMailer(config);
   const billing = createBilling({ db, config, mailer });
@@ -115,10 +117,10 @@ function createApp({ db, config }) {
     next();
   });
   app.use('/api', express.json({ limit: '5mb' }));
-  app.use('/api', createAccountRouter({ db, config, mailer, sessions }));
-  app.use('/api', createApiRouter({ db, sessions, access, billing, mailer, config, notifier }).router);
-  app.use('/api', createContentRouter({ db, config: { ...config, uploadsDir }, access }));
-  app.use('/api', createAbRouter({ db, access }));
+  app.use('/api', createAccountRouter({ db, config, mailer, sessions, storage }));
+  app.use('/api', createApiRouter({ db, sessions, access, billing, mailer, config, notifier, storage }).router);
+  app.use('/api', createContentRouter({ db, config: { ...config, uploadsDir }, access, storage }));
+  app.use('/api', createAbRouter({ db, access, config, mailer }));
   app.use('/api', createApiKeysRouter({ db, access }));
   app.use('/api', createAnalyticsRouter({ db, config, access }));
   // Abuse report form (/_htc/report, any host) and trust & safety admin API.

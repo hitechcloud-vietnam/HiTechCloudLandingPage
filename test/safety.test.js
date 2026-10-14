@@ -351,3 +351,54 @@ test('SAFETY_AUTO_SUSPEND=0 only flags for review', async (t) => {
   assert.equal(flag.status, 'open');
   assert.equal(flag.auto_suspended, 0);
 });
+
+test("suspending an account takes its own sites and API keys offline until it is restored", async (t) => {
+  const { server, base, db } = await startServer();
+  t.after(() => server.close());
+  const { c, wsId } = await signup(base, db, 'bad@example.com', 'Bad');
+  const { c: admin } = await signup(base, db, 'root@hitechcloud.vn', 'Root');
+  const uid = db.prepare('SELECT id FROM users WHERE email = ?').get('bad@example.com').id;
+  db.prepare("UPDATE workspaces SET plan = 'pro' WHERE id = ?").run(wsId);
+  const own = await createSite(c, wsId, 'cua-toi');
+  const manual = await createSite(c, wsId, 'da-khoa');
+  await c('POST', `/api/pages/${own.page.id}/publish`, {});
+  const key = (await c('POST', `/api/workspaces/${wsId}/api-keys`, { name: 'Zapier' })).data.key;
+  const v1 = () => fetch(`${base}/api/v1/sites`, { headers: { Authorization: `Bearer ${key}` } });
+  // A site suspended on its own keeps that suspension when the account is restored.
+  await admin('POST', `/api/admin/sites/${manual.site.id}/suspend`, { reason: 'Vi phạm bản quyền' });
+  // Someone else's workspace where the account is only an editor stays online.
+  const { c: other, wsId: otherWs } = await signup(base, db, 'other@example.com', 'Other');
+  const shared = await createSite(other, otherWs, 'cua-nguoi-khac');
+  await other('POST', `/api/pages/${shared.page.id}/publish`, {});
+  await other('POST', `/api/workspaces/${otherWs}/members`, { email: 'bad@example.com', role: 'editor' });
+
+  assert.equal((await v1()).status, 200);
+  assert.equal((await admin('POST', `/api/admin/users/${uid}/suspend`, { reason: 'Lừa đảo' })).status, 200);
+  assert.equal((await fetch(`${base}/p/cua-toi`)).status, 451);
+  assert.equal((await fetch(`${base}/p/cua-nguoi-khac`)).status, 200);
+  const denied = await v1();
+  assert.equal(denied.status, 403);
+  assert.match((await denied.json()).error, /tạm ngưng/);
+
+  assert.equal((await admin('POST', `/api/admin/users/${uid}/unsuspend`, {})).status, 200);
+  assert.equal((await fetch(`${base}/p/cua-toi`)).status, 200);
+  assert.equal(db.prepare('SELECT suspended_reason FROM sites WHERE id = ?').get(manual.site.id).suspended_reason, 'Vi phạm bản quyền');
+  assert.equal((await v1()).status, 200);
+});
+
+test('promoting an A/B variant re-runs the publish scan on the original page', async (t) => {
+  const { server, base, db } = await startServer();
+  t.after(() => server.close());
+  const { c, wsId } = await signup(base, db, 'owner@example.com');
+  db.prepare("UPDATE workspaces SET plan = 'business' WHERE id = ?").run(wsId);
+  const { site, page } = await createSite(c, wsId, 'thu-nghiem', 'blank');
+  await c('POST', `/api/pages/${page.id}/publish`, {});
+  const variant = (await c('POST', `/api/sites/${site.id}/pages`, { title: 'B', slug: 'b' })).data;
+  // Card-harvesting variant: flagged at its own URL but not auto-suspended.
+  await c('PUT', `/api/pages/${variant.id}/project`, { project: {}, html: '<form><input name="card_number" placeholder="Số thẻ"><input name="cvv"></form>', css: '' });
+  await c('POST', `/api/pages/${variant.id}/publish`, {});
+  const ab = (await c('POST', `/api/sites/${site.id}/ab-tests`, { pageId: page.id, variantPageId: variant.id })).data;
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM safety_flags WHERE page_id = ?').get(page.id).n, 0);
+  assert.equal((await c('POST', `/api/ab-tests/${ab.id}/stop`, { winner: 'b' })).status, 200);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM safety_flags WHERE page_id = ? AND status = 'open'").get(page.id).n, 1);
+});

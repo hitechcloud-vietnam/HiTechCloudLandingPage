@@ -17,6 +17,8 @@ const { transaction } = require('../db');
 const { PLANS, workspacePlan, workspacePlanById, effectivePlanId, publicPlan } = require('../plans');
 const { renderTemplate, listTemplates, listBlocks, BASE_CSS } = require('../templates');
 const { createSafety, assertSiteActive } = require('../safety');
+const { workspaceAssetKeys, removeObjects } = require('../storage');
+const { logger } = require('../logger');
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const DOMAIN_RE = /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
@@ -50,7 +52,7 @@ function csvCell(value) {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
-function createApiRouter({ db, sessions, access, billing, mailer, config, notifier }) {
+function createApiRouter({ db, sessions, access, billing, mailer, config, notifier, storage }) {
   const r = express.Router();
   const domains = createDomainVerifier(config);
   const safety = createSafety({ db, config, mailer });
@@ -186,9 +188,11 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
     return { ok: true };
   }));
 
-  r.delete('/workspaces/:wid', h((req) => {
+  r.delete('/workspaces/:wid', h(async (req) => {
     const { ws } = access.workspace(req.user, req.params.wid, 'owner');
+    const assetKeys = workspaceAssetKeys(db, [ws.id]);
     db.prepare('DELETE FROM workspaces WHERE id = ?').run(ws.id);
+    if (storage) await removeObjects(storage, assetKeys, req.log || logger);
     return { ok: true };
   }));
 

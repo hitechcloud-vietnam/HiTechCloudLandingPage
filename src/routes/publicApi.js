@@ -10,6 +10,7 @@ const { workspacePlanById } = require('../plans');
 const { createRateLimiter } = require('../ratelimit');
 const { snapshotVersion } = require('./content');
 const { createSafety, assertSiteActive } = require('../safety');
+const { assertEmailVerified } = require('./account');
 
 const KEY_PREFIX = 'htc_live_';
 const KEY_RE = /^htc_live_[A-Za-z0-9_-]{32,64}$/;
@@ -115,6 +116,10 @@ function createPublicApiRouter({ db, config = {} }) {
       res.setHeader('WWW-Authenticate', 'Bearer error="invalid_token"');
       throw new HttpError(401, 'API key không hợp lệ hoặc đã bị thu hồi');
     }
+    const suspendedOwner = db
+      .prepare("SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? AND m.role = 'owner' AND u.suspended_at IS NOT NULL")
+      .get(key.workspace_id);
+    if (suspendedOwner) throw new HttpError(403, 'Tài khoản chủ sở hữu workspace đã bị tạm ngưng do vi phạm điều khoản sử dụng');
     if (!workspacePlanById(db, key.workspace_id).apiAccess) throw new HttpError(402, PLAN_MESSAGE);
     if (!limiter(key.id)) {
       res.setHeader('Retry-After', '60');
@@ -228,6 +233,14 @@ function createPublicApiRouter({ db, config = {} }) {
       .prepare('SELECT p.id, p.site_id FROM pages p JOIN sites s ON s.id = p.site_id WHERE p.id = ? AND s.workspace_id = ?')
       .get(req.params.id, req.apiKey.workspace_id);
     if (!page) throw new HttpError(404, 'Không tìm thấy trang');
+    // Same rule as the dashboard: the key's creator (or, if gone, the owner) must have a verified email.
+    const actor = db
+      .prepare(
+        `SELECT COALESCE(k.created_by, (SELECT user_id FROM memberships WHERE workspace_id = k.workspace_id AND role = 'owner')) AS id
+         FROM api_keys k WHERE k.id = ?`
+      )
+      .get(req.apiKey.id);
+    assertEmailVerified(db, actor.id, 'xuất bản trang');
     assertSiteActive(db, page.site_id);
     snapshotVersion(db, page.id, null);
     db.prepare("UPDATE pages SET published_html = draft_html, published_css = draft_css, published_at = datetime('now') WHERE id = ?").run(page.id);
