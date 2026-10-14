@@ -8,11 +8,12 @@ Lõi trình thiết kế dùng [GrapesJS](https://github.com/GrapesJS/grapesjs).
 
 | Nhóm | Chi tiết |
 |---|---|
-| Trình thiết kế | Kéo thả trên GrapesJS, xem trước theo máy tính / tablet / điện thoại, 8 section dựng sẵn (Hero, Tính năng, Bảng giá, Đánh giá, Form thu lead, CTA…), tự động lưu, phím tắt Ctrl+S |
-| Mẫu khởi đầu | Trang trắng, Sản phẩm SaaS, Thu lead nhanh, Sự kiện/Webinar |
+| Trình thiết kế | Kéo thả trên GrapesJS, xem trước theo máy tính / tablet / điện thoại, tự động lưu, phím tắt Ctrl+S. Có 14 section dựng sẵn: Hero, Tính năng, Con số, Quy trình, Bảng giá, Đánh giá, FAQ, Video YouTube, Đếm ngược ưu đãi, Form thu lead, CTA, nút gọi/Zalo/Messenger nổi… |
+| Mẫu khởi đầu | 9 mẫu theo ngành, mỗi mẫu có bảng màu riêng: Trang trắng, Sản phẩm SaaS, Thu lead nhanh, Sự kiện/Webinar, Spa/Thẩm mỹ, Bất động sản, Khóa học, Nhà hàng/F&B, Bán sản phẩm (COD) |
 | Xuất bản | Tách bản nháp và bản đã xuất bản, gỡ xuất bản, xem trước bản nháp, cài SEO (title, meta description, OG) |
 | Tên miền | `/p/<subdomain>`, `<subdomain>.<PUBLISH_ROOT_DOMAIN>`, tên miền riêng (gói Pro trở lên) |
-| Thu lead | Mọi `<form>` trên trang đã xuất bản tự gửi về hệ thống. Có chống spam (honeypot + giới hạn tần suất), xuất CSV (chống CSV injection) |
+| Thu lead & CRM | Mọi `<form>` trên trang đã xuất bản tự gửi về hệ thống. Tự ghi nhận nguồn khách (UTM, referrer). Có trạng thái (Mới → Đã liên hệ → Tiềm năng → Thành công/Thất bại), ghi chú, bộ lọc theo trạng thái / từ khóa / ngày. Chống spam (honeypot + giới hạn tần suất). Xuất CSV theo bộ lọc (chống CSV injection) |
+| A/B testing | Chia lưu lượng giữa trang gốc và trang biến thể theo tỉ lệ tùy chọn, mỗi khách luôn thấy cùng một phiên bản. Thống kê lượt xem, lead, tỉ lệ chuyển đổi và độ tin cậy (z-test) của từng phiên bản. Chọn phiên bản thắng để thay vào URL gốc (gói Pro trở lên) |
 | Nhiều người thuê | Nhiều workspace cho mỗi người dùng, vai trò Chủ sở hữu / Quản trị viên / Biên tập viên, dữ liệu cách ly theo workspace |
 | Gói dịch vụ | Miễn phí / Pro / Business, giới hạn số website, trang, thành viên, lead/tháng, tên miền riêng, gỡ nhãn "Tạo bởi HiTechCloud" |
 | Thanh toán | **payOS** (VietQR) và **Pay2S**. Thanh toán theo chu kỳ 1 tháng hoặc 12 tháng (tặng 2 tháng). Gói tự hết hạn và quay về gói Miễn phí. Gia hạn được cộng dồn vào thời gian còn lại. Webhook xác thực chữ ký HMAC, xử lý trùng lặp an toàn (idempotent) và đối chiếu số tiền |
@@ -23,7 +24,7 @@ Lõi trình thiết kế dùng [GrapesJS](https://github.com/GrapesJS/grapesjs).
 | Thư viện ảnh | Tải ảnh PNG/JPEG/GIF/WEBP vào editor. Kiểm tra định dạng bằng nội dung file. Dung lượng theo gói: 50 MB / 2 GB / 10 GB |
 | Lịch sử phiên bản | Tự lưu một phiên bản mỗi lần xuất bản (giữ 20 bản gần nhất), khôi phục về bản nháp. Có nhân bản trang |
 | Tài khoản | Quên/đặt lại mật khẩu qua email, mời thành viên qua email, đổi mật khẩu, giới hạn số lần đăng nhập sai |
-| Tên miền riêng | Xác minh quyền sở hữu bằng bản ghi DNS TXT hoặc CNAME. Chỉ tên miền đã xác minh mới được phục vụ và cấp HTTPS |
+| Tên miền riêng | Xác minh quyền sở hữu bằng bản ghi DNS TXT gắn với từng website. Chỉ tên miền đã xác minh, thuộc workspace còn gói trả phí, mới được phục vụ và cấp HTTPS. Yêu cầu gắn tên miền chưa xác minh quá 72 giờ sẽ được giải phóng cho website khác |
 | Vận hành | `docker-compose` kèm Caddy tự cấp HTTPS (kể cả tên miền của khách), `/healthz`, email nhắc gia hạn trước 7 ngày và 1 ngày, `npm run backup`, CI trên GitHub Actions |
 | Bảo mật | Mật khẩu băm scrypt, session lưu trong DB (cookie httpOnly, SameSite=Lax), chống CSRF (kiểm tra Origin và bắt buộc body JSON), trang khách hàng phục vụ trên domain dashboard được cô lập bằng `CSP: sandbox` |
 
@@ -34,7 +35,7 @@ Yêu cầu Node.js 22.13 trở lên (dùng SQLite tích hợp sẵn `node:sqlite
 ```bash
 npm install
 npm start            # http://localhost:3000
-npm test             # chạy bộ test API
+npm test             # chạy 73 test (API, thanh toán, tên miền, A/B…)
 ```
 
 Bắt đầu tại `http://localhost:3000/app/signup`.
@@ -60,7 +61,7 @@ docker compose up -d --build
    - Trỏ wildcard `*.hitechcloud.site` và `sites.hitechcloud.site` (giá trị `CNAME_TARGET`) về máy chủ.
    - Nên dùng **tên miền gốc khác** với dashboard để cô lập cookie.
 2. **HTTPS:** Caddy tự cấp chứng chỉ cho dashboard. Với subdomain và tên miền riêng của khách, chứng chỉ được cấp khi có lượt truy cập đầu tiên (*on-demand TLS*). Trước khi cấp, Caddy hỏi `/_htc/tls-ask` để chắc chắn host đó thuộc một website đang chạy.
-3. **Tên miền riêng:** khách thêm CNAME về `CNAME_TARGET` hoặc bản ghi TXT `_htc-verify.<domain>`, sau đó bấm "Kiểm tra DNS" trong cài đặt website.
+3. **Tên miền riêng:** khách thêm bản ghi TXT `_htc-verify.<domain>` (xác minh quyền sở hữu) và CNAME về `CNAME_TARGET` (trỏ lưu lượng), sau đó bấm "Kiểm tra DNS" trong cài đặt website.
 4. **Quản trị:** đặt `SUPERADMIN_EMAILS` để vào `/app/admin`.
 5. **Sao lưu:** chạy định kỳ `docker compose exec app node scripts/backup.js /data/backups`. Lệnh này dùng `VACUUM INTO`, chạy được khi ứng dụng vẫn đang hoạt động.
 
@@ -110,6 +111,8 @@ src/
   routes/sites.js    Phục vụ trang đã xuất bản (theo host hoặc /p/), xem trước, thu lead, sitemap, TLS ask
   routes/account.js  Quên mật khẩu, lời mời, đổi mật khẩu
   routes/content.js  Thư viện ảnh, lịch sử phiên bản, nhân bản trang
+  routes/abtests.js  A/B testing (chia lưu lượng, thống kê, chọn phiên bản thắng)
+  http.js, usage.js  Tiện ích dùng chung (bọc handler, đếm mức sử dụng)
   siteSettings.js    Cài đặt tích hợp marketing và thông báo theo từng website
   notify.js          Gửi thông báo lead (email / webhook / Telegram)
   domains.js         Xác minh tên miền riêng bằng DNS
@@ -140,7 +143,12 @@ test/                Test API bằng node:test
 | GET/POST | `/api/sites/:id/pages` | Trang |
 | GET/PUT | `/api/pages/:id/project` | Lưu và tải dự án GrapesJS |
 | POST | `/api/pages/:id/publish`, `/unpublish` | Xuất bản |
-| GET | `/api/sites/:id/leads[?format=csv]` | Lead |
+| GET / PATCH | `/api/sites/:id/leads[?status=&q=&from=&to=&format=csv]`, `/api/leads/:id` | Lead: lọc, xuất CSV, cập nhật trạng thái và ghi chú |
+| PATCH | `/api/sites/:id/settings` | Tích hợp marketing và thông báo |
+| POST | `/api/sites/:id/verify-domain` | Xác minh tên miền riêng |
+| GET/POST/DELETE | `/api/workspaces/:id/assets`, `/api/assets/:id` | Thư viện ảnh (body là ảnh thô, `Content-Type: image/*`) |
+| GET/POST | `/api/pages/:id/versions[/:vid/restore]`, `/api/pages/:id/duplicate` | Lịch sử phiên bản, nhân bản trang |
+| GET/POST | `/api/sites/:id/ab-tests`, `/api/ab-tests/:id/stop` | A/B testing |
 
 ## Lộ trình tiếp theo
 
@@ -148,7 +156,6 @@ test/                Test API bằng node:test
 - Lưu ảnh lên S3-compatible storage (hiện lưu trên đĩa, trong volume `/data`).
 - Gửi thông báo lead qua Zalo OA.
 - Chuyển sang PostgreSQL khi mở rộng nhiều instance.
-- A/B testing giữa các phiên bản trang.
 
 ## Giấy phép mã nguồn bên thứ ba
 
