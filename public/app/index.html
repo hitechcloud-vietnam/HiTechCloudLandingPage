@@ -46,7 +46,20 @@
     </div>
   </div>
 
-  <section data-panel="sites"><div class="grid" id="sites"></div></section>
+  <section data-panel="sites">
+    <section class="card onboarding" id="onboarding" aria-labelledby="onb-title" hidden>
+      <div class="row">
+        <div>
+          <h2 id="onb-title">Bắt đầu nhanh</h2>
+          <span class="muted" id="onb-progress-text"></span>
+        </div>
+        <button class="btn btn-ghost btn-sm" type="button" id="onb-dismiss" aria-label="Ẩn danh sách bắt đầu nhanh">Ẩn</button>
+      </div>
+      <progress id="onb-progress" max="5" value="0" aria-labelledby="onb-progress-text"></progress>
+      <ol class="checklist" id="onb-steps" style="margin-top:12px"></ol>
+    </section>
+    <div class="grid" id="sites"></div>
+  </section>
 
   <section data-panel="members" hidden>
     <div class="card stack">
@@ -133,6 +146,22 @@
         <div class="row"><input id="ws-new" name="name" style="flex:1" required><button class="btn btn-ghost" type="submit">Tạo</button></div>
       </form>
     </div>
+    <form class="card stack" id="email-prefs-form" style="margin-top:16px">
+      <div>
+        <h3 style="margin:0">Email</h3>
+        <span class="muted">Chọn email bạn muốn nhận. Email giao dịch (xác minh, đặt lại mật khẩu, thanh toán) luôn được gửi.</span>
+      </div>
+      <div>
+        <label class="consent" for="pref-digest"><input type="checkbox" id="pref-digest" name="digest">
+          <span><strong>Tóm tắt lead hằng tuần</strong><span class="hint" style="display:block;margin:0">Sáng thứ Hai: lead, lượt xem và tỷ lệ chuyển đổi tuần trước của các workspace bạn sở hữu hoặc quản trị.</span></span></label>
+        <label class="consent" for="pref-tips"><input type="checkbox" id="pref-tips" name="tips">
+          <span><strong>Mẹo &amp; nhắc nhở</strong><span class="hint" style="display:block;margin:0">Hướng dẫn và nhắc nhở giúp bạn xuất bản trang và nhận lead.</span></span></label>
+      </div>
+      <div class="row" style="justify-content:flex-start">
+        <button class="btn btn-ghost" type="submit">Lưu tùy chọn email</button>
+        <span class="muted" id="email-prefs-msg" role="status"></span>
+      </div>
+    </form>
     <div class="card stack" id="api-keys-card" style="margin-top:16px" hidden>
       <div>
         <h3 style="margin:0">API keys</h3>
@@ -218,6 +247,7 @@ async function load() {
   $('#profile-name').value = me.user.name;
   $('#verify-banner').hidden = me.user.emailVerified;
   $('#verify-email').textContent = me.user.email;
+  loadEmailPrefs().catch(showError);
   const current = HTC.currentWorkspace(me.workspaces);
   $('#ws-select').innerHTML = me.workspaces
     .map((w) => `<option value="${w.id}" ${w.id === current.id ? 'selected' : ''}>${esc(w.name)}</option>`)
@@ -237,7 +267,7 @@ async function loadWorkspace(id) {
     ['Thành viên', ws.usage.members, p.maxMembers],
     ['Lead tháng này', ws.usage.leadsThisMonth, p.maxLeadsPerMonth],
   ].map(([label, used, max]) => `<div class="card"><span class="muted">${label}</span><strong>${used} / ${limit(max)}</strong></div>`).join('');
-  await Promise.all([loadSites(), loadMembers(), loadPlans(), loadOrders(), loadApiKeys(), loadBillingProfile()]);
+  await Promise.all([loadSites(), loadOnboarding(), loadMembers(), loadPlans(), loadOrders(), loadApiKeys(), loadBillingProfile()]);
 }
 
 // ----- VAT invoice details (owner/admin) -----
@@ -290,6 +320,54 @@ function invoiceCell(o) {
     return `<span class="badge badge-danger">Đã hủy</span>${inv.cancelReason ? `<div class="hint">${esc(inv.cancelReason)}</div>` : ''}${requestBtn('Gửi lại yêu cầu')}`;
   }
   return '<span class="badge badge-primary">Đang xử lý</span>';
+}
+
+// ----- onboarding checklist (steps computed by the server) -----
+const ONB_STEPS = {
+  verify_email: ['Xác minh email', 'Bấm liên kết trong email xác minh để có thể xuất bản trang.'],
+  create_site: ['Tạo website đầu tiên', 'Chọn một mẫu có sẵn rồi chỉnh sửa bằng kéo thả.'],
+  publish_page: ['Xuất bản trang', 'Mở website và bấm “Xuất bản” để trang lên mạng.'],
+  first_lead: ['Nhận lead đầu tiên', 'Chia sẻ đường dẫn trang để khách hàng để lại thông tin.'],
+  lead_notify: ['Kết nối thông báo lead (email/Telegram/…)', 'Thêm email, Telegram, Slack, Discord, webhook hoặc Google Sheets trong Cài đặt website.'],
+  custom_domain: ['Gắn tên miền riêng', 'Dùng tên miền của bạn thay cho tên miền phụ.'],
+};
+
+function onboardingAction(step, siteId) {
+  if (step.done) return '';
+  const siteLink = (label, tab) => (siteId ? `<a class="btn btn-ghost btn-sm" href="/app/site?id=${siteId}${tab ? `&tab=${tab}` : ''}">${label}</a>` : '');
+  switch (step.id) {
+    case 'verify_email': return '<button class="btn btn-ghost btn-sm" type="button" data-onb="resend">Gửi lại email</button>';
+    case 'create_site': return '<button class="btn btn-sm" type="button" data-onb="create">Tạo ngay</button>';
+    case 'publish_page': return siteLink('Mở website');
+    case 'lead_notify': return siteLink('Thiết lập thông báo', 'settings');
+    case 'custom_domain': return step.available ? siteLink('Gắn tên miền', 'settings') : '<button class="btn btn-ghost btn-sm" type="button" data-onb="upgrade">Xem gói Pro</button>';
+    default: return '';
+  }
+}
+
+async function loadOnboarding() {
+  const o = await api(`/workspaces/${ws.id}/onboarding`);
+  $('#onboarding').hidden = !o.visible;
+  if (!o.visible) return;
+  $('#onb-progress-text').textContent = `Đã hoàn thành ${o.completed}/${o.total} bước`;
+  $('#onb-progress').max = o.total;
+  $('#onb-progress').value = o.completed;
+  $('#onb-steps').innerHTML = o.steps.map((s) => {
+    const [title, hint] = ONB_STEPS[s.id] || [s.id, ''];
+    const note = s.optional ? (s.available === false ? 'Tùy chọn, có ở gói Pro trở lên. ' : 'Tùy chọn. ') : '';
+    const action = onboardingAction(s, o.firstSiteId);
+    return `<li class="${s.done ? 'done' : ''}">
+      <span class="check" aria-hidden="true">${s.done ? '✓' : ''}</span>
+      <div class="step-body"><span class="step-title">${esc(title)}</span><span class="sr-only">${s.done ? ' (đã hoàn thành)' : ' (chưa hoàn thành)'}</span>
+        <div class="hint">${esc(note + hint)}</div></div>
+      ${action ? `<div class="step-action">${action}</div>` : ''}</li>`;
+  }).join('');
+}
+
+async function loadEmailPrefs() {
+  const p = await api('/auth/email-preferences');
+  $('#pref-digest').checked = p.digest;
+  $('#pref-tips').checked = p.tips;
 }
 
 async function loadApiKeys() {
@@ -443,6 +521,36 @@ async function loadOrders() {
 
 // ----- events -----
 $('#logout').onclick = HTC.logout;
+
+$('#onb-dismiss').onclick = async () => {
+  showError();
+  try {
+    await api(`/workspaces/${ws.id}/onboarding/dismiss`, { method: 'POST', body: {} });
+    $('#onboarding').hidden = true;
+    $('#new-site-btn').focus();
+  } catch (err) { showError(err); }
+};
+
+$('#onb-steps').onclick = (e) => {
+  const btn = e.target.closest('[data-onb]');
+  const action = btn?.dataset.onb;
+  if (action === 'create') $('#new-site-btn').click();
+  else if (action === 'resend') {
+    btn.disabled = true;
+    $('#verify-resend').click();
+  }
+  else if (action === 'upgrade') selectTab('billing');
+};
+
+$('#email-prefs-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  $('#email-prefs-msg').textContent = '';
+  try {
+    await api('/auth/email-preferences', { method: 'PUT', body: { digest: $('#pref-digest').checked, tips: $('#pref-tips').checked } });
+    $('#email-prefs-msg').textContent = 'Đã lưu tùy chọn email.';
+  } catch (err) { showError(err); }
+};
 $('#ws-select').onchange = (e) => loadWorkspace(Number(e.target.value)).catch(showError);
 
 document.querySelectorAll('.tabs button').forEach((btn) => { btn.onclick = () => selectTab(btn.dataset.tab); });

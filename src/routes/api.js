@@ -19,6 +19,7 @@ const { renderTemplate, listTemplates, listBlocks, BASE_CSS } = require('../temp
 const { createSafety, assertSiteActive } = require('../safety');
 const { workspaceAssetKeys, removeObjects } = require('../storage');
 const { logger } = require('../logger');
+const { sendWelcomeEmails } = require('../lifecycle');
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const DOMAIN_RE = /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
@@ -129,6 +130,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
         db.prepare('INSERT INTO memberships (workspace_id, user_id, role) VALUES (?, ?, ?)').run(w.lastInsertRowid, userId, 'owner');
       }
     }
+    sendWelcomeEmails({ db, mailer, config, userId });
     // Accepting an emailed invitation already verifies the address.
     if (!workspaceId) await sendVerificationEmail(db, { mailer, config }, { id: userId, email, name });
     sessions.create(res, userId);

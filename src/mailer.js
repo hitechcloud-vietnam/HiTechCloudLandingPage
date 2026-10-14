@@ -14,8 +14,8 @@ function createMailer(config) {
     transport = nodemailer.createTransport(config.smtpUrl);
   }
 
-  async function send({ to, subject, text, html }) {
-    const msg = { from: config.mailFrom, to, subject, text, html: html || layout(subject, text) };
+  async function send({ to, subject, text, html, headers }) {
+    const msg = { from: config.mailFrom, to, subject, text, html: html || layout(subject, text), ...(headers && { headers }) };
     outbox.push(msg);
     if (outbox.length > 100) outbox.shift();
     if (!transport) {

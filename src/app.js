@@ -21,6 +21,7 @@ const { createErrorReporter } = require('./errors');
 const { createSafetyRouter } = require('./routes/safety');
 const { createInvoicesRouter } = require('./routes/invoices');
 const { createStorage } = require('./storage');
+const { createLifecycleRouter, createUnsubscribeRouter } = require('./routes/lifecycle');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -103,6 +104,9 @@ function createApp({ db, config }) {
     next();
   });
 
+  // Unsubscribe links from lifecycle emails (signed token, no session).
+  app.use(createUnsubscribeRouter({ db, config }));
+
   // Public REST API v1 (bearer API keys, no cookies), so it bypasses the session CSRF checks.
   app.use('/api/v1', createPublicApiRouter({ db, config }));
 
@@ -127,6 +131,7 @@ function createApp({ db, config }) {
   app.use('/api', createAnalyticsRouter({ db, config, access }));
   // VAT invoice requests: billing profile, per-order requests, admin processing.
   app.use('/api', createInvoicesRouter({ db, access, mailer, config }));
+  app.use('/api', createLifecycleRouter({ db, access }));
   // Abuse report form (/_htc/report, any host) and trust & safety admin API.
   app.use(createSafetyRouter({ db, config, mailer }));
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Không tìm thấy' }));

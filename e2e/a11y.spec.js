@@ -80,6 +80,9 @@ test.describe('Khả năng truy cập & hiển thị di động', () => {
     await signupAndVerify(page);
     await expect(page.locator('#ws-name')).not.toHaveText('…');
     await expect(page.locator('#sites .card').first()).toBeVisible();
+    // Onboarding checklist is shown (and measured) for a new workspace.
+    await expect(page.locator('#onboarding')).toBeVisible();
+    await expect(page.locator('#onb-steps li')).toHaveCount(6);
     await expectAccessible(page, errors);
 
     // The create-site dialog fits the screen and labels its fields too.
