@@ -34,6 +34,12 @@ test('assets, versions and duplication', async (t) => {
     assert.match(img.headers.get('content-security-policy'), /default-src 'none'/);
     assert.deepEqual(Buffer.from(await img.arrayBuffer()), PNG);
 
+    // Malformed file name header: upload still succeeds with a default name.
+    const odd = await upload(PNG, 'image/png', { 'X-File-Name': '%E0%A4%A' });
+    assert.equal(odd.status, 201);
+    assert.equal(odd.data.name, 'image');
+    await c('DELETE', `/api/assets/${odd.data.id}`);
+
     // HTML disguised as an image is rejected; SVG / other types are not accepted.
     assert.equal((await upload(Buffer.from('<html><script>alert(1)</script></html>'))).status, 415);
     assert.equal((await upload(Buffer.from('<svg onload="alert(1)"/>'), 'image/svg+xml')).status, 415);
@@ -97,6 +103,13 @@ test('assets, versions and duplication', async (t) => {
     assert.equal((await c('GET', `/api/pages/${d1.data.id}/project`)).data.html, '<h1>Phiên bản 1</h1>');
     // Free plan: max 3 pages per site.
     assert.equal((await c('POST', `/api/pages/${page.id}/duplicate`, {})).status, 402);
+    // Long slugs still produce valid "-copy" slugs.
+    db.prepare("UPDATE workspaces SET plan = 'pro' WHERE id = ?").run(wsId);
+    const longSlug = `${'a'.repeat(50)}-${'b'.repeat(12)}`;
+    const long = (await c('POST', `/api/sites/${site.id}/pages`, { title: 'Dài', slug: longSlug })).data;
+    const d3 = (await c('POST', `/api/pages/${long.id}/duplicate`, {})).data;
+    assert.match(d3.slug, /^a{50}-copy$/);
+    assert.equal((await c('PATCH', `/api/pages/${d3.id}`, { slug: d3.slug })).status, 200);
   });
 
 });

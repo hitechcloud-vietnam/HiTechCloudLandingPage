@@ -1,7 +1,8 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const dns = require('node:dns').promises;
+const dnsCb = require('node:dns');
+const https = require('node:https');
 const net = require('node:net');
 const { parse } = require('./siteSettings');
 
@@ -20,11 +21,38 @@ function isPrivateAddress(ip) {
   return v === '::' || v === '::1' || v.startsWith('fc') || v.startsWith('fd') || v.startsWith('fe8') || v.startsWith('fe9') || v.startsWith('fea') || v.startsWith('feb');
 }
 
-async function assertPublicUrl(url) {
+// Validates the URL shape; IP-literal hosts are checked here because no DNS
+// lookup happens for them at connect time.
+function assertPublicUrl(url) {
   const u = new URL(url);
   if (u.protocol !== 'https:') throw new Error('Webhook phải dùng https');
-  const addrs = net.isIP(u.hostname) ? [{ address: u.hostname }] : await dns.lookup(u.hostname, { all: true });
-  if (!addrs.length || addrs.some((a) => isPrivateAddress(a.address))) throw new Error('Webhook trỏ tới địa chỉ nội bộ');
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  if (net.isIP(host) && isPrivateAddress(host)) throw new Error('Webhook trỏ tới địa chỉ nội bộ');
+}
+
+// DNS lookup used for the actual connection: rejects private addresses at
+// connect time, so a rebinding DNS answer cannot slip past an earlier check.
+function guardedLookup(hostname, options, callback) {
+  dnsCb.lookup(hostname, { ...options, all: true }, (err, addrs) => {
+    if (err) return callback(err);
+    if (!addrs.length || addrs.some((a) => isPrivateAddress(a.address))) {
+      return callback(new Error('Webhook trỏ tới địa chỉ nội bộ'));
+    }
+    if (options && options.all) return callback(null, addrs);
+    callback(null, addrs[0].address, addrs[0].family);
+  });
+}
+
+function httpsPostJson(url, body, headers) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(url, { method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(body) }, lookup: guardedLookup, timeout: 10000 }, (res) => {
+      res.resume();
+      resolve(res.statusCode);
+    });
+    req.on('timeout', () => req.destroy(new Error('Webhook quá thời gian chờ')));
+    req.on('error', reject);
+    req.end(body);
+  });
 }
 
 function formatLead(data) {
@@ -38,17 +66,18 @@ function createNotifier({ db, config, mailer }) {
   const allowPrivateWebhooks = !!config.allowPrivateWebhooks; // tests only
 
   async function sendWebhook(settings, payload) {
-    if (!allowPrivateWebhooks) await assertPublicUrl(settings.webhookUrl);
+    if (!allowPrivateWebhooks) assertPublicUrl(settings.webhookUrl);
     const body = JSON.stringify(payload);
     const signature = crypto.createHmac('sha256', settings.webhookSecret || '').update(body).digest('hex');
-    const res = await fetch(settings.webhookUrl, {
-      method: 'POST',
-      redirect: 'manual',
-      headers: { 'Content-Type': 'application/json', 'User-Agent': 'HiTechCloud-Webhook/1.0', 'X-HTC-Signature': `sha256=${signature}` },
-      body,
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) throw new Error(`Webhook trả về HTTP ${res.status}`);
+    const headers = { 'Content-Type': 'application/json', 'User-Agent': 'HiTechCloud-Webhook/1.0', 'X-HTC-Signature': `sha256=${signature}` };
+    let status;
+    if (config.fetch) {
+      // Injected transport (tests).
+      status = (await fetch(settings.webhookUrl, { method: 'POST', redirect: 'manual', headers, body, signal: AbortSignal.timeout(10000) })).status;
+    } else {
+      status = await httpsPostJson(settings.webhookUrl, body, headers);
+    }
+    if (status < 200 || status >= 300) throw new Error(`Webhook trả về HTTP ${status}`);
   }
 
   async function sendTelegram(settings, text) {
@@ -106,4 +135,4 @@ function createNotifier({ db, config, mailer }) {
   return { leadCreated };
 }
 
-module.exports = { createNotifier, isPrivateAddress, assertPublicUrl };
+module.exports = { createNotifier, isPrivateAddress, assertPublicUrl, guardedLookup, httpsPostJson };

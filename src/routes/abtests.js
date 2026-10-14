@@ -1,10 +1,12 @@
 'use strict';
 
 const express = require('express');
+const { handler } = require('../http');
 const { HttpError } = require('../access');
 const { requireUser } = require('../auth');
 const { transaction } = require('../db');
-const { workspacePlan } = require('../plans');
+const { workspacePlanById } = require('../plans');
+const { snapshotVersion } = require('./content');
 
 // Normal CDF via Abramowitz–Stegun erf approximation (enough for a confidence readout).
 function normalCdf(z) {
@@ -29,24 +31,15 @@ function createAbRouter({ db, access }) {
   const r = express.Router();
   r.use(requireUser);
 
-  const h = (fn) => (req, res, next) => {
-    try {
-      const out = fn(req, res);
-      if (out !== undefined && !res.headersSent) res.json(out);
-    } catch (err) {
-      next(err);
-    }
-  };
+  const h = handler;
 
+  // Exact per-bucket counts: views are recorded when a test serves a page and
+  // leads carry the test id + bucket from the form, so pre-test traffic and
+  // direct visits to the variant URL never skew the comparison.
   function stats(test) {
-    const since = test.started_at;
-    const until = test.stopped_at || '9999-12-31';
-    const views = (pageId) =>
-      db.prepare('SELECT COALESCE(SUM(views), 0) AS n FROM page_views WHERE page_id = ? AND day >= ? AND day <= ?').get(pageId, since.slice(0, 10), until.slice(0, 10)).n;
-    const leads = (pageId) =>
-      db.prepare('SELECT COUNT(*) AS n FROM leads WHERE page_id = ? AND created_at >= ? AND created_at <= ?').get(pageId, since, until).n;
-    const a = { pageId: test.page_id, views: views(test.page_id), leads: leads(test.page_id) };
-    const b = { pageId: test.variant_page_id, views: views(test.variant_page_id), leads: leads(test.variant_page_id) };
+    const leads = (bucket) => db.prepare('SELECT COUNT(*) AS n FROM leads WHERE ab_test_id = ? AND ab_bucket = ?').get(test.id, bucket).n;
+    const a = { pageId: test.page_id, views: test.views_a, leads: leads('a') };
+    const b = { pageId: test.variant_page_id, views: test.views_b, leads: leads('b') };
     for (const x of [a, b]) x.rate = x.views ? Math.round((x.leads / x.views) * 10000) / 100 : 0;
     return { a, b, confidence: confidence(a.leads, a.views, b.leads, b.views) };
   }
@@ -63,8 +56,7 @@ function createAbRouter({ db, access }) {
 
   r.post('/sites/:sid/ab-tests', h((req, res) => {
     const { site } = access.site(req.user, req.params.sid);
-    const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(site.workspace_id);
-    if (!workspacePlan(ws).abTesting) throw new HttpError(402, 'A/B testing chỉ có ở gói Pro trở lên');
+    if (!workspacePlanById(db, site.workspace_id).abTesting) throw new HttpError(402, 'A/B testing chỉ có ở gói Pro trở lên');
     const pageId = Number(req.body.pageId);
     const variantId = Number(req.body.variantPageId);
     const split = Number(req.body.split ?? 50);
@@ -89,6 +81,12 @@ function createAbRouter({ db, access }) {
     access.site(req.user, test.site_id);
     if (test.status !== 'running') throw new HttpError(400, 'Thử nghiệm đã dừng');
     const winner = ['a', 'b'].includes(req.body.winner) ? req.body.winner : null;
+    if (winner === 'b') {
+      const variant = db.prepare('SELECT published_html FROM pages WHERE id = ?').get(test.variant_page_id);
+      if (!variant || variant.published_html === null) throw new HttpError(400, 'Trang biến thể chưa được xuất bản');
+      // Keep the original's current draft restorable from version history.
+      snapshotVersion(db, test.page_id, req.user.id);
+    }
     transaction(db, () => {
       db.prepare("UPDATE ab_tests SET status = 'stopped', winner = ?, stopped_at = datetime('now') WHERE id = ?").run(winner, test.id);
       if (winner === 'b') {
@@ -106,10 +104,10 @@ function createAbRouter({ db, access }) {
 }
 
 // Picks the page to serve for a URL under a running test, keeping each visitor
-// on one variant via a cookie. Returns the page row to render.
+// on one version via a cookie. Returns { page, test, bucket }.
 function pickVariant(db, page, req, res) {
   const test = db.prepare("SELECT * FROM ab_tests WHERE page_id = ? AND status = 'running'").get(page.id);
-  if (!test) return page;
+  if (!test) return { page, test: null, bucket: null };
   const name = `htc_ab_${test.id}`;
   const match = (req.headers.cookie || '').match(new RegExp(`(?:^|;\\s*)${name}=([ab])`));
   let bucket = match && match[1];
@@ -117,9 +115,20 @@ function pickVariant(db, page, req, res) {
     bucket = Math.random() * 100 < test.split ? 'b' : 'a';
     res.cookie(name, bucket, { maxAge: 30 * 86400_000, httpOnly: true, sameSite: 'lax', path: '/' });
   }
-  if (bucket === 'a') return page;
-  const variant = db.prepare('SELECT * FROM pages WHERE id = ? AND published_html IS NOT NULL').get(test.variant_page_id);
-  return variant || page;
+  const variant = bucket === 'b' && db.prepare('SELECT * FROM pages WHERE id = ? AND published_html IS NOT NULL').get(test.variant_page_id);
+  if (bucket === 'b' && !variant) return { page, test: null, bucket: null };
+  return { page: variant || page, test, bucket };
 }
 
-module.exports = { createAbRouter, pickVariant, confidence };
+function recordAbView(db, test, bucket) {
+  db.prepare(`UPDATE ab_tests SET ${bucket === 'b' ? 'views_b = views_b + 1' : 'views_a = views_a + 1'} WHERE id = ?`).run(test.id);
+}
+
+// Pages taking part in a running test (as original or variant) cannot be
+// unpublished or deleted until the test is stopped.
+function assertNotInRunningTest(db, pageId) {
+  const busy = db.prepare("SELECT 1 FROM ab_tests WHERE status = 'running' AND (page_id = ? OR variant_page_id = ?)").get(pageId, pageId);
+  if (busy) throw new HttpError(400, 'Trang đang nằm trong một thử nghiệm A/B. Hãy dừng thử nghiệm trước.');
+}
+
+module.exports = { createAbRouter, pickVariant, recordAbView, assertNotInRunningTest, confidence };

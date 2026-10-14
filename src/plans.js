@@ -64,6 +64,12 @@ function workspacePlan(ws) {
   return getPlan(effectivePlanId(ws));
 }
 
+// Effective plan of a workspace by id (expiry-aware).
+function workspacePlanById(db, workspaceId) {
+  const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(workspaceId);
+  return ws ? workspacePlan(ws) : getPlan('free');
+}
+
 function priceFor(planId, months) {
   const plan = PLANS[planId];
   const factor = BILLING_CYCLES[months];
@@ -78,4 +84,4 @@ function publicPlan(plan) {
   );
 }
 
-module.exports = { PLANS, BILLING_CYCLES, getPlan, effectivePlanId, workspacePlan, priceFor, publicPlan };
+module.exports = { PLANS, BILLING_CYCLES, getPlan, effectivePlanId, workspacePlan, workspacePlanById, priceFor, publicPlan };

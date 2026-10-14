@@ -3,9 +3,10 @@
 const crypto = require('node:crypto');
 const dns = require('node:dns').promises;
 
-// Custom-domain ownership check. A domain is accepted when either
-//  - TXT  _htc-verify.<domain>  contains  htc-verify=<token>, or
-//  - CNAME <domain>  points at the configured CNAME_TARGET.
+// Custom-domain ownership check: TXT _htc-verify.<domain> must contain
+// htc-verify=<token>, where the token is issued to the site claiming the domain.
+// A CNAME to CNAME_TARGET only routes traffic; it is not proof of ownership,
+// since any tenant could otherwise claim a domain already pointed at us.
 // Only verified domains are served and get TLS certificates.
 
 function newDomainToken() {
@@ -37,13 +38,13 @@ function createDomainVerifier(config) {
       const domain = site.custom_domain;
       const txt = (await safe(() => resolver.resolveTxt(`_htc-verify.${domain}`))).map((parts) => parts.join(''));
       if (txt.includes(`htc-verify=${site.domain_token}`)) return { ok: true, method: 'txt' };
-      if (target) {
-        const cnames = (await safe(() => resolver.resolveCname(domain))).map((c) => c.toLowerCase().replace(/\.$/, ''));
-        if (cnames.includes(target)) return { ok: true, method: 'cname' };
-      }
       return { ok: false };
     },
   };
 }
 
-module.exports = { createDomainVerifier, newDomainToken };
+// Unverified claims older than this can be taken over by another site,
+// so nobody can squat a domain they do not control.
+const CLAIM_TTL_HOURS = 72;
+
+module.exports = { createDomainVerifier, newDomainToken, CLAIM_TTL_HOURS };

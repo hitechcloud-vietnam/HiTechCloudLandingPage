@@ -4,10 +4,11 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
+const { handler } = require('../http');
 const { HttpError } = require('../access');
 const { requireUser } = require('../auth');
 const { transaction } = require('../db');
-const { workspacePlan } = require('../plans');
+const { workspacePlan, workspacePlanById } = require('../plans');
 
 const MAX_UPLOAD = 5 * 1024 * 1024;
 const MAX_VERSIONS = 20;
@@ -35,14 +36,7 @@ function createContentRouter({ db, config, access }) {
   fs.mkdirSync(config.uploadsDir, { recursive: true });
   r.use(requireUser);
 
-  const h = (fn) => (req, res, next) => {
-    Promise.resolve()
-      .then(() => fn(req, res))
-      .then((out) => {
-        if (out !== undefined && !res.headersSent) res.json(out);
-      })
-      .catch(next);
-  };
+  const h = handler;
 
   function storageUsed(workspaceId) {
     return db.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM assets WHERE workspace_id = ?').get(workspaceId).n;
@@ -75,13 +69,19 @@ function createContentRouter({ db, config, access }) {
       if (storageUsed(ws.id) + buf.length > plan.storageMb * 1024 * 1024) {
         throw new HttpError(402, `Đã hết dung lượng lưu trữ của gói ${plan.name} (${plan.storageMb} MB)`);
       }
+      let name = 'image';
+      try {
+        name = cleanName(decodeURIComponent(req.get('x-file-name') || 'image'));
+      } catch {
+        // Malformed percent-encoding: keep the default name.
+      }
       const rel = `${ws.id}/${crypto.randomBytes(12).toString('hex')}.${kind.ext}`;
       const file = path.join(config.uploadsDir, rel);
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, buf);
       const info = db
         .prepare('INSERT INTO assets (workspace_id, path, name, mime, size) VALUES (?, ?, ?, ?, ?)')
-        .run(ws.id, rel, cleanName(req.get('x-file-name') && decodeURIComponent(req.get('x-file-name'))), kind.mime, buf.length);
+        .run(ws.id, rel, name, kind.mime, buf.length);
       res.status(201);
       return assetView(db.prepare('SELECT * FROM assets WHERE id = ?').get(info.lastInsertRowid));
     })
@@ -92,7 +92,7 @@ function createContentRouter({ db, config, access }) {
     if (!asset) throw new HttpError(404, 'Không tìm thấy');
     access.workspace(req.user, asset.workspace_id);
     db.prepare('DELETE FROM assets WHERE id = ?').run(asset.id);
-    fs.rm(path.join(config.uploadsDir, asset.path), { force: true }, () => {});
+    fs.rmSync(path.join(config.uploadsDir, asset.path), { force: true });
     return { ok: true };
   }));
 
@@ -123,12 +123,13 @@ function createContentRouter({ db, config, access }) {
   // ---------- Duplicate ----------
   r.post('/pages/:pid/duplicate', h((req, res) => {
     const { page, site } = access.page(req.user, req.params.pid);
-    const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(site.workspace_id);
-    const plan = workspacePlan(ws);
+    const plan = workspacePlanById(db, site.workspace_id);
     const count = db.prepare('SELECT COUNT(*) AS n FROM pages WHERE site_id = ?').get(site.id).n;
     if (count >= plan.maxPagesPerSite) throw new HttpError(402, `Gói ${plan.name} cho phép tối đa ${plan.maxPagesPerSite} trang mỗi website`);
     // Pick the first free "<slug>-copy[-n]".
-    const baseSlug = `${page.slug === 'index' ? 'trang-chu' : page.slug}-copy`.slice(0, 56);
+    // Trim the source so "-copy" (and a "-NN" counter) always fit in 63 chars.
+    const stem = (page.slug === 'index' ? 'trang-chu' : page.slug).slice(0, 51).replace(/-+$/, '');
+    const baseSlug = `${stem}-copy`;
     let slug = baseSlug;
     for (let i = 2; db.prepare('SELECT 1 FROM pages WHERE site_id = ? AND slug = ?').get(site.id, slug); i++) slug = `${baseSlug}-${i}`;
     const info = db
