@@ -20,6 +20,7 @@ Lõi trình thiết kế dùng [GrapesJS](https://github.com/GrapesJS/grapesjs).
 | Quản trị nền tảng | `/app/admin`: số người dùng, workspace trả phí, MRR, doanh thu, danh sách khách hàng, lịch sử giao dịch, cấp gói thủ công |
 | Thống kê | Lượt xem trang 30 ngày (bỏ qua bot), số lead và tỉ lệ chuyển đổi theo từng trang |
 | Tích hợp marketing | Google Analytics 4, Google Tag Manager, Facebook Pixel, TikTok Pixel. Sự kiện chuyển đổi (Lead) gửi tự động khi khách điền form. Favicon, og:image, canonical, `sitemap.xml`, `robots.txt`. Chèn mã tùy chỉnh vào `<head>`/`<body>` (gói Pro trở lên) |
+| API công khai | REST API `/api/v1` cho Zapier/Make/CRM bằng API key của workspace: đọc website, trang, lead; cập nhật trạng thái lead; xuất bản trang. Key chỉ lưu mã băm, thu hồi được, giới hạn 120 yêu cầu/phút (gói Pro trở lên) |
 | Thông báo lead | Email (chủ sở hữu, quản trị viên và tối đa 5 địa chỉ khác), webhook có ký HMAC (Zapier/Make/n8n/CRM, chặn gửi tới địa chỉ nội bộ để chống SSRF), Telegram bot. Có nút gửi thông báo thử |
 | Thư viện ảnh | Tải ảnh PNG/JPEG/GIF/WEBP vào editor. Kiểm tra định dạng bằng nội dung file. Dung lượng theo gói: 50 MB / 2 GB / 10 GB |
 | Lịch sử phiên bản | Tự lưu một phiên bản mỗi lần xuất bản (giữ 20 bản gần nhất), khôi phục về bản nháp. Có nhân bản trang |
@@ -149,6 +150,41 @@ test/                Test API bằng node:test
 | GET/POST/DELETE | `/api/workspaces/:id/assets`, `/api/assets/:id` | Thư viện ảnh (body là ảnh thô, `Content-Type: image/*`) |
 | GET/POST | `/api/pages/:id/versions[/:vid/restore]`, `/api/pages/:id/duplicate` | Lịch sử phiên bản, nhân bản trang |
 | GET/POST | `/api/sites/:id/ab-tests`, `/api/ab-tests/:id/stop` | A/B testing |
+| GET/POST | `/api/workspaces/:id/api-keys` | Danh sách / tạo API key `{name}` (chủ sở hữu, quản trị viên; gói Pro trở lên) |
+| DELETE | `/api/api-keys/:id` | Thu hồi API key |
+| GET | `/api/v1/sites`, `/api/v1/sites/:id/pages` | API công khai (Bearer API key): website và trang |
+| GET | `/api/v1/sites/:id/leads[?since=&status=&limit=&cursor=]` | API công khai: lead mới nhất trước, phân trang bằng `cursor` |
+| PATCH | `/api/v1/leads/:id` | API công khai: cập nhật `{status, note}` của lead |
+| POST | `/api/v1/pages/:id/publish` | API công khai: xuất bản trang |
+
+## API công khai
+
+API REST `/api/v1` dành cho Zapier, Make, n8n, CRM… (gói Pro trở lên). Tạo API key ở dashboard → **Cài đặt** → **API keys** (chỉ chủ sở hữu và quản trị viên). Key có dạng `htc_live_…` và chỉ hiển thị **một lần** khi tạo; hệ thống chỉ lưu mã băm SHA-256, sau đó chỉ hiển thị phần đầu (`htc_live_xxxx…`) để nhận diện. Key bị thu hồi hoặc workspace hết gói trả phí sẽ bị từ chối ngay.
+
+- Xác thực: header `Authorization: Bearer <API key>` (không dùng cookie). Mọi dữ liệu được giới hạn trong workspace sở hữu key.
+- Giới hạn: 120 yêu cầu/phút cho mỗi key (vượt quá trả `429` kèm `Retry-After`).
+- Lỗi trả về JSON `{"error": "..."}`: `400` dữ liệu không hợp lệ, `401` thiếu/sai/đã thu hồi key, `402` gói không hỗ trợ API, `404` không tìm thấy hoặc thuộc workspace khác, `429` vượt giới hạn.
+- Danh sách trả về dạng `{"data": [...]}`. Lead có dạng `{id, page, data, source, status, note, createdAt}`; trạng thái hợp lệ: `new`, `contacted`, `qualified`, `won`, `lost`.
+
+```bash
+export HTC_KEY=htc_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+export HTC_URL=https://app.example.vn
+
+# Danh sách website và trang
+curl -H "Authorization: Bearer $HTC_KEY" $HTC_URL/api/v1/sites
+curl -H "Authorization: Bearer $HTC_KEY" $HTC_URL/api/v1/sites/1/pages
+
+# Lead mới từ một thời điểm (mới nhất trước, tối đa 500 mỗi lần; dùng nextCursor để lấy trang tiếp)
+curl -H "Authorization: Bearer $HTC_KEY" "$HTC_URL/api/v1/sites/1/leads?since=2026-10-01T00:00:00Z&status=new&limit=100"
+curl -H "Authorization: Bearer $HTC_KEY" "$HTC_URL/api/v1/sites/1/leads?limit=100&cursor=42"
+
+# Cập nhật trạng thái và ghi chú của lead
+curl -X PATCH -H "Authorization: Bearer $HTC_KEY" -H "Content-Type: application/json" \
+  -d '{"status":"contacted","note":"Đã gọi lúc 10h"}' $HTC_URL/api/v1/leads/42
+
+# Xuất bản trang
+curl -X POST -H "Authorization: Bearer $HTC_KEY" $HTC_URL/api/v1/pages/7/publish
+```
 
 ## Lộ trình tiếp theo
 

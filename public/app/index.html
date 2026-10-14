@@ -100,6 +100,27 @@
         <div class="row"><input id="ws-new" name="name" style="flex:1" required><button class="btn btn-ghost" type="submit">Tạo</button></div>
       </form>
     </div>
+    <div class="card stack" id="api-keys-card" style="margin-top:16px" hidden>
+      <div>
+        <h3 style="margin:0">API keys</h3>
+        <span class="muted">Kết nối Zapier, Make, CRM… với API công khai <code>/api/v1</code> bằng header <code>Authorization: Bearer &lt;API key&gt;</code>.</span>
+      </div>
+      <div class="alert alert-info" id="api-plan-note"></div>
+      <form id="api-key-form" class="row">
+        <input id="api-key-name" name="name" placeholder="Tên key, ví dụ: Zapier" maxlength="100" style="flex:1" required aria-label="Tên API key">
+        <button class="btn" type="submit">Tạo API key</button>
+      </form>
+      <div class="alert alert-info" id="api-key-created" hidden>
+        <strong>API key mới (chỉ hiển thị một lần):</strong>
+        <input id="api-key-value" readonly style="width:100%;margin:6px 0;font-family:monospace">
+        <span class="hint">Hãy sao chép và lưu ở nơi an toàn. Sau khi đóng, bạn sẽ không xem lại được key này.</span>
+        <div class="row" style="justify-content:flex-start;margin-top:6px">
+          <button class="btn btn-sm" type="button" id="api-key-copy">Sao chép</button>
+          <button class="btn btn-ghost btn-sm" type="button" id="api-key-close">Đã lưu, đóng</button>
+        </div>
+      </div>
+      <div class="table-wrap"><table><thead><tr><th>Tên</th><th>Key</th><th>Tạo bởi</th><th>Dùng lần cuối</th><th>Trạng thái</th><th></th></tr></thead><tbody id="api-keys"></tbody></table></div>
+    </div>
   </section>
 </main>
 
@@ -160,7 +181,24 @@ async function loadWorkspace(id) {
     ['Thành viên', ws.usage.members, p.maxMembers],
     ['Lead tháng này', ws.usage.leadsThisMonth, p.maxLeadsPerMonth],
   ].map(([label, used, max]) => `<div class="card"><span class="muted">${label}</span><strong>${used} / ${limit(max)}</strong></div>`).join('');
-  await Promise.all([loadSites(), loadMembers(), loadPlans(), loadOrders()]);
+  await Promise.all([loadSites(), loadMembers(), loadPlans(), loadOrders(), loadApiKeys()]);
+}
+
+async function loadApiKeys() {
+  const canManage = ws.role === 'owner' || ws.role === 'admin';
+  $('#api-keys-card').hidden = !canManage;
+  if (!canManage) return;
+  const allowed = !!ws.planDetails.apiAccess;
+  $('#api-plan-note').textContent = allowed ? '' : 'API chỉ có ở gói Pro trở lên. Nâng cấp gói để tạo API key.';
+  $('#api-key-form').hidden = !allowed;
+  const keys = await api(`/workspaces/${ws.id}/api-keys`);
+  const time = (t) => (t ? new Date(t.replace(' ', 'T') + 'Z').toLocaleString('vi-VN') : 'Chưa dùng');
+  $('#api-keys').innerHTML = keys.length
+    ? keys.map((k) => `
+      <tr><td>${esc(k.name)}</td><td><code>${esc(k.prefix)}…</code></td><td>${esc(k.createdBy || '')}</td><td>${time(k.lastUsedAt)}</td>
+      <td>${k.revokedAt ? '<span class="badge badge-danger">Đã thu hồi</span>' : '<span class="badge badge-success">Đang hoạt động</span>'}</td>
+      <td>${k.revokedAt ? '' : `<button class="btn btn-ghost btn-sm" data-revoke-key="${k.id}">Thu hồi</button>`}</td></tr>`).join('')
+    : '<tr><td colspan="6" class="muted">Chưa có API key nào.</td></tr>';
 }
 
 async function loadSites() {
@@ -226,6 +264,7 @@ function renderPlans() {
         <li>${limit(p.maxLeadsPerMonth)} lead / tháng</li>
         <li>${p.customDomain ? 'Tên miền riêng' : 'Chỉ tên miền phụ'}</li>
         <li>${p.removeBranding ? 'Không gắn thương hiệu HiTechCloud' : 'Có gắn nhãn HiTechCloud'}</li>
+        <li>${p.apiAccess ? 'API công khai & API key' : 'Không có API'}</li>
       </ul>
       <div class="row" style="justify-content:flex-start">${action}</div>
     </div>`;
@@ -306,6 +345,38 @@ $('#invites').onclick = async (e) => {
   const id = e.target.dataset.revoke;
   if (!id) return;
   try { await api(`/workspaces/${ws.id}/invitations/${id}`, { method: 'DELETE' }); await loadMembers(); } catch (err) { showError(err); }
+};
+
+$('#api-key-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  try {
+    const created = await api(`/workspaces/${ws.id}/api-keys`, { method: 'POST', body: formData(e.target) });
+    e.target.reset();
+    $('#api-key-value').value = created.key;
+    $('#api-key-created').hidden = false;
+    $('#api-key-value').select();
+    await loadApiKeys();
+  } catch (err) { showError(err); }
+};
+
+$('#api-key-copy').onclick = async () => {
+  const input = $('#api-key-value');
+  input.select();
+  try { await navigator.clipboard.writeText(input.value); } catch { document.execCommand('copy'); }
+  $('#api-key-copy').textContent = 'Đã sao chép';
+};
+
+$('#api-key-close').onclick = () => {
+  $('#api-key-value').value = '';
+  $('#api-key-created').hidden = true;
+  $('#api-key-copy').textContent = 'Sao chép';
+};
+
+$('#api-keys').onclick = async (e) => {
+  const id = e.target.dataset.revokeKey;
+  if (!id || !confirm('Thu hồi API key này? Các tích hợp đang dùng key sẽ ngừng hoạt động ngay.')) return;
+  try { await api(`/api-keys/${id}`, { method: 'DELETE' }); await loadApiKeys(); } catch (err) { showError(err); }
 };
 
 $('#profile-form').onsubmit = async (e) => {
