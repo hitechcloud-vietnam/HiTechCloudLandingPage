@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const express = require('express');
+const { logger } = require('../logger');
 const { handler } = require('../http');
 const { HttpError } = require('../access');
 const { requireUser } = require('../auth');
@@ -231,13 +232,13 @@ function createPublicApiRouter({ db, config = {} }) {
   r.use((_req, res) => res.status(404).json({ error: 'Không tìm thấy' }));
 
   // Keep errors inside the v1 API as JSON with Vietnamese messages.
-  r.use((err, _req, res, _next) => {
+  r.use((err, req, res, _next) => {
     let status = err.status || err.statusCode || 500;
     let message = err.message;
     if (err.type === 'entity.parse.failed') message = 'Dữ liệu JSON không hợp lệ';
     else if (err.type === 'entity.too.large') message = 'Dữ liệu gửi lên quá lớn';
     if (status >= 500) {
-      console.error(err);
+      (req.log || logger).error('Public API error', { err, stack: err.stack });
       status = 500;
       message = 'Lỗi máy chủ';
     }

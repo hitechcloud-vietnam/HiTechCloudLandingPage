@@ -124,6 +124,19 @@ Lưu ý:
 - Khóa đối tượng giống đường dẫn cũ (`<workspace_id>/<tên ngẫu nhiên>.<đuôi>`). Khi chuyển từ local sang S3, hãy sao chép thư mục `UPLOADS_DIR` lên bucket (vd `aws s3 sync /data/uploads s3://<bucket>/`) để thư viện ảnh hiển thị đủ ảnh cũ. Các trang đã xuất bản vẫn dùng đường dẫn `/uploads/…` cũ, nên hãy giữ nguyên volume `UPLOADS_DIR`: ứng dụng vẫn phục vụ `/uploads` với mọi driver.
 - Nếu dịch vụ lưu trữ lỗi, API trả về 502 và không ghi nhận ảnh (hoặc giữ ảnh trong thư viện khi xóa thất bại) để người dùng thử lại.
 
+## Giám sát & vận hành
+
+- **Log có cấu trúc:** mỗi dòng log là một đối tượng JSON (`LOG_FORMAT=json`, mặc định khi `NODE_ENV=production`) hoặc dạng dễ đọc (`LOG_FORMAT=pretty`). Mức log đặt bằng `LOG_LEVEL` (`debug` | `info` | `warn` | `error` | `silent`). Các trường nhạy cảm (`password`, `token`, `authorization`, `cookie`, `secret`, `apiKey`, `checksumKey`, `m2signature`…) và thông tin đăng nhập trong URL luôn bị che thành `[REDACTED]`.
+- **Log truy cập:** mỗi request ghi một dòng gồm `reqId`, method, đường dẫn (**không** có query string; token trong đường dẫn bị che), route, status, `durationMs`, host, IP và `userId` nếu đã đăng nhập. `/healthz`, `/readyz`, `/metrics` và file tĩnh chỉ ghi ở mức `debug`.
+- **Request ID:** header `X-Request-Id` hợp lệ (8–128 ký tự `A-Z a-z 0-9 . _ : -`) được giữ nguyên, nếu không hệ thống tự sinh UUID. Giá trị luôn được trả lại trong header phản hồi; lỗi 500 trả về `{ "error": "Lỗi máy chủ", "requestId": "…" }` để tra log.
+- **Kiểm tra sức khỏe:** `GET /healthz` (tiến trình và DB đọc được, dùng cho healthcheck Docker) và `GET /readyz` (DB nhận được khóa ghi — không ghi dữ liệu).
+- **Prometheus:** đặt `METRICS_TOKEN` để bật `GET /metrics`. Endpoint chỉ phục vụ trên host của `APP_URL` và yêu cầu `Authorization: Bearer <METRICS_TOKEN>`; khi chưa đặt token, hoặc trên host của khách (subdomain / tên miền riêng), request đi tiếp như đường dẫn bình thường (thường là 404, hoặc trang có slug `metrics` của khách). Các metric chính:
+  - `http_requests_total{method,route,status_class}` và `http_request_duration_seconds` (histogram). `route` là mẫu route Express (vd `/api/sites/:sid/pages`) để giới hạn số chuỗi; file tĩnh là `static`, còn lại là `other`.
+  - `process_uptime_seconds`, `process_resident_memory_bytes`, `process_cpu_seconds_total`, `nodejs_heap_used_bytes`, `nodejs_eventloop_lag_seconds{quantile}` (độ trễ event loop kể từ lần scrape trước).
+  - Chỉ số kinh doanh (cache 15 giây): `hitechcloud_users`, `hitechcloud_workspaces`, `hitechcloud_workspaces_paid{plan}`, `hitechcloud_sites`, `hitechcloud_pages_published`, `hitechcloud_leads_today` (tính từ 00:00 UTC).
+- **Cảnh báo lỗi:** đặt `ERROR_WEBHOOK_URL` (https, tương thích Slack incoming webhook và Discord webhook) để nhận cảnh báo khi có lỗi 5xx, promise bị từ chối không được xử lý hoặc exception không bắt được (sau khi gửi cảnh báo, tiến trình thoát và Docker tự khởi động lại). Mỗi loại lỗi (theo *fingerprint*: tên lỗi + thông điệp đã bỏ số + vị trí ném lỗi) gửi tối đa 1 lần/phút; số lần bị gộp được ghi trong cảnh báo kế tiếp.
+- **Quyết định về Caddy:** `/metrics` không bị chặn ở Caddy vì ứng dụng tự từ chối trên host của khách (một trang của khách có thể có slug `metrics`) và trên host dashboard thì yêu cầu token. Muốn chặt hơn, bật đoạn giới hạn IP có sẵn (đang được comment) trong `deploy/Caddyfile`. Ví dụ cấu hình scrape ở cuối `docker-compose.yml`.
+
 ## Cấu hình cổng thanh toán
 
 Cổng nào có đủ biến môi trường thì sẽ hiện trong tab **Gói dịch vụ**. Xem `.env.example`.
@@ -178,6 +191,9 @@ src/
   domains.js         Xác minh tên miền riêng bằng DNS
   jobs.js            Nhắc gia hạn, dọn session và token hết hạn
   mailer.js          Gửi email qua SMTP
+  logger.js          Log JSON có cấu trúc, che dữ liệu nhạy cảm, request ID + log truy cập
+  metrics.js         Metric Prometheus (/metrics)
+  errors.js          Gửi cảnh báo lỗi qua webhook (giới hạn 1 lần/phút mỗi loại lỗi)
 public/
   index.html         Trang giới thiệu sản phẩm
   app/               Dashboard (đăng nhập, workspace, website, lead, thanh toán), admin.html

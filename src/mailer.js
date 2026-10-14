@@ -1,6 +1,7 @@
 'use strict';
 
 const { escapeHtml } = require('./render');
+const { logger } = require('./logger');
 
 // Sends transactional email over SMTP (SMTP_URL). Without SMTP it logs the
 // message, which keeps local development and tests working. Sending never
@@ -25,7 +26,7 @@ function createMailer(config) {
       await transport.sendMail(msg);
       return true;
     } catch (err) {
-      console.error(`[mail] gửi tới ${to} thất bại: ${err.message}`);
+      (config.logger || logger).error(`[mail] gửi tới ${to} thất bại: ${err.message}`, { component: 'mail' });
       return false;
     }
   }

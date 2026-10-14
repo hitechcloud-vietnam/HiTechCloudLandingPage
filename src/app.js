@@ -14,6 +14,9 @@ const { createContentRouter } = require('./routes/content');
 const { createAbRouter } = require('./routes/abtests');
 const { createPublicApiRouter, createApiKeysRouter } = require('./routes/publicApi');
 const { createAnalyticsRouter } = require('./routes/analytics');
+const { logger, requestLogger } = require('./logger');
+const { createMetrics } = require('./metrics');
+const { createErrorReporter } = require('./errors');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -31,6 +34,26 @@ function createApp({ db, config }) {
   const billing = createBilling({ db, config, mailer });
   const notifier = createNotifier({ db, config, mailer });
   app.locals.mailer = mailer;
+
+  // Observability: request id + access log, Prometheus metrics, error alerts.
+  const log = config.logger || logger;
+  const metrics = createMetrics({ db, config });
+  const errors = config.errorReporter || createErrorReporter({ url: config.errorWebhookUrl, log });
+  app.use(requestLogger({ log }));
+  app.use(metrics.middleware);
+  app.get('/metrics', metrics.handler);
+
+  // Readiness: the database accepts a write lock (no data is written).
+  app.get('/readyz', (_req, res) => {
+    try {
+      db.exec('BEGIN IMMEDIATE');
+      db.exec('ROLLBACK');
+      res.json({ ok: true });
+    } catch (err) {
+      log.warn('Readiness check failed', { err });
+      res.status(503).json({ ok: false });
+    }
+  });
 
   app.get('/healthz', (_req, res) => {
     try {
@@ -116,12 +139,16 @@ function createApp({ db, config }) {
     res.sendFile(file, { maxAge: '7d' });
   });
 
+  app.use(metrics.unmatched);
   app.use(express.static(path.join(ROOT, 'public'), { extensions: ['html'] }));
 
-  app.use((err, _req, res, _next) => {
+  app.use((err, req, res, _next) => {
     const status = err.status || err.statusCode || 500;
-    if (status >= 500) console.error(err);
-    res.status(status).json({ error: status >= 500 ? 'Lỗi máy chủ' : err.message });
+    if (status >= 500) {
+      (req.log || log).error('Request failed', { err, method: req.method, route: req.routePattern, host: req.hostname });
+      errors.report(err, { kind: 'http_5xx', requestId: req.id, method: req.method, route: req.routePattern, host: req.hostname });
+    }
+    res.status(status).json(status >= 500 ? { error: 'Lỗi máy chủ', requestId: req.id } : { error: err.message });
   });
 
   return app;

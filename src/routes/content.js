@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const express = require('express');
 const { handler } = require('../http');
+const { logger } = require('../logger');
 const { HttpError } = require('../access');
 const { requireUser } = require('../auth');
 const { transaction } = require('../db');
@@ -82,7 +83,7 @@ function createContentRouter({ db, config, access, storage = createStorage(confi
       try {
         await storage.put(rel, buf, kind.mime);
       } catch (err) {
-        console.error('[storage] upload failed:', err.message);
+        (req.log || logger).error('Storage upload failed', { err: err.message });
         throw new HttpError(502, 'Không thể lưu ảnh lúc này, vui lòng thử lại sau');
       }
       // Re-check the quota after the async upload so concurrent uploads cannot overshoot.
@@ -106,7 +107,7 @@ function createContentRouter({ db, config, access, storage = createStorage(confi
     try {
       await storage.remove(asset.path);
     } catch (err) {
-      console.error('[storage] delete failed:', err.message);
+      (req.log || logger).error('Storage delete failed', { err: err.message });
       throw new HttpError(502, 'Không thể xóa ảnh lúc này, vui lòng thử lại sau');
     }
     db.prepare('DELETE FROM assets WHERE id = ?').run(asset.id);

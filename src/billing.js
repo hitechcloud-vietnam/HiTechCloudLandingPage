@@ -8,6 +8,7 @@ const { createPayOS } = require('./payments/payos');
 const { createPay2S } = require('./payments/pay2s');
 const { HttpError } = require('./access');
 const { normalizeCode, findCoupon, applyCoupon } = require('./coupons');
+const { logger } = require('./logger');
 
 function createProviders(config) {
   const providers = {};
@@ -54,6 +55,7 @@ function newExpiry(ws, currentPlan, order, now) {
 
 function createBilling({ db, config, mailer }) {
   const providers = createProviders(config);
+  const log = (config.logger || logger).child({ component: 'billing' });
 
   function getOrderByCode(provider, code) {
     return db.prepare('SELECT * FROM orders WHERE provider = ? AND order_code = ?').get(provider, String(code));
@@ -89,7 +91,7 @@ function createBilling({ db, config, mailer }) {
     const r = db
       .prepare('UPDATE coupons SET redeemed_count = redeemed_count + 1 WHERE code = ? AND (max_redemptions IS NULL OR redeemed_count < max_redemptions)')
       .run(order.coupon_code);
-    if (!r.changes) console.warn(`Mã giảm giá ${order.coupon_code} đã hết lượt khi xác nhận đơn #${order.id}; đơn vẫn được kích hoạt`);
+    if (!r.changes) log.warn(`Mã giảm giá ${order.coupon_code} đã hết lượt khi xác nhận đơn #${order.id}; đơn vẫn được kích hoạt`);
   }
 
   function sendReceipt(orderId) {
@@ -174,7 +176,7 @@ function createBilling({ db, config, mailer }) {
       return { orderId, checkoutUrl: result.checkoutUrl, amount };
     } catch (err) {
       db.prepare("UPDATE orders SET status = 'failed' WHERE id = ?").run(orderId);
-      console.error(err);
+      log.error('Payment checkout creation failed', { err, orderId, provider });
       throw new HttpError(502, 'Không tạo được giao dịch thanh toán, vui lòng thử lại');
     }
   }
@@ -189,7 +191,7 @@ function createBilling({ db, config, mailer }) {
     try {
       event = p.verifyWebhook(req.body || {});
     } catch (err) {
-      console.warn(`Webhook ${req.params.provider} bị từ chối: ${err.message}`);
+      log.warn(`Webhook ${req.params.provider} bị từ chối: ${err.message}`);
       return res.status(400).json({ success: false });
     }
     const order = getOrderByCode(p.id, event.orderCode);
@@ -198,7 +200,7 @@ function createBilling({ db, config, mailer }) {
       try {
         fulfill(order, event);
       } catch (err) {
-        console.error(err);
+        log.error('Fulfilling order failed', { err, orderId: order.id });
         db.prepare("UPDATE orders SET status = 'failed' WHERE id = ? AND status = 'pending'").run(order.id);
       }
     }
@@ -225,7 +227,7 @@ function createBilling({ db, config, mailer }) {
         }
       }
     } catch (err) {
-      console.warn(`Không xác nhận được đơn ${order.id}: ${err.message}`);
+      log.warn(`Không xác nhận được đơn ${order.id}: ${err.message}`);
     }
     finish(res, order);
   });
