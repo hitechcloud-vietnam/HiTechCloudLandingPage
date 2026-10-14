@@ -9,6 +9,7 @@ const { requireUser } = require('../auth');
 const { workspacePlanById } = require('../plans');
 const { createRateLimiter } = require('../ratelimit');
 const { snapshotVersion } = require('./content');
+const { createSafety, assertSiteActive } = require('../safety');
 
 const KEY_PREFIX = 'htc_live_';
 const KEY_RE = /^htc_live_[A-Za-z0-9_-]{32,64}$/;
@@ -224,12 +225,14 @@ function createPublicApiRouter({ db, config = {} }) {
 
   r.post('/pages/:id/publish', h((req) => {
     const page = db
-      .prepare('SELECT p.id FROM pages p JOIN sites s ON s.id = p.site_id WHERE p.id = ? AND s.workspace_id = ?')
+      .prepare('SELECT p.id, p.site_id FROM pages p JOIN sites s ON s.id = p.site_id WHERE p.id = ? AND s.workspace_id = ?')
       .get(req.params.id, req.apiKey.workspace_id);
     if (!page) throw new HttpError(404, 'Không tìm thấy trang');
+    assertSiteActive(db, page.site_id);
     snapshotVersion(db, page.id, null);
     db.prepare("UPDATE pages SET published_html = draft_html, published_css = draft_css, published_at = datetime('now') WHERE id = ?").run(page.id);
-    return { ok: true, publishedAt: db.prepare('SELECT published_at FROM pages WHERE id = ?').get(page.id).published_at };
+    const review = createSafety({ db, config, mailer: req.app.locals.mailer }).onPublish(page.id);
+    return { ok: true, publishedAt: db.prepare('SELECT published_at FROM pages WHERE id = ?').get(page.id).published_at, ...(review.suspended && { suspended: true }) };
   }));
 
   r.use((_req, res) => res.status(404).json({ error: 'Không tìm thấy' }));

@@ -30,6 +30,8 @@ const config = {
     forcePathStyle: ['1', 'true', 'yes'].includes(String(process.env.S3_FORCE_PATH_STYLE || '').toLowerCase()),
   },
   superAdmins: list(process.env.SUPERADMIN_EMAILS),
+  // Auto-suspend sites whose published page looks like bank phishing (0 = flag for review only).
+  safetyAutoSuspend: !['0', 'false', 'no', 'off'].includes(String(process.env.SAFETY_AUTO_SUSPEND ?? '1').trim().toLowerCase()),
   sessionDays: Number(process.env.SESSION_DAYS || 30),
   secureCookies: process.env.NODE_ENV === 'production',
   // smtp(s)://user:pass@host:port — leave empty to log emails to stdout.

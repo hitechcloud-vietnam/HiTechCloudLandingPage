@@ -220,7 +220,11 @@ function widgetScripts(body) {
   return out.length ? STORE_JS + out.join('') : '';
 }
 
-const BRANDING = `<a href="https://hitechcloud.vn" target="_blank" rel="noopener" style="position:fixed;left:12px;bottom:12px;z-index:2147483647;background:#0f172a;color:#fff;font:12px/1 system-ui,sans-serif;padding:8px 12px;border-radius:999px;text-decoration:none;opacity:.85">Tạo bởi HiTechCloud</a>`;
+// Free-plan badge, with a link to the abuse report form for this page.
+function branding(siteId, slug) {
+  const link = 'color:#fff;text-decoration:none';
+  return `<div style="position:fixed;left:12px;bottom:12px;z-index:2147483647;background:#0f172a;color:#fff;font:12px/1 system-ui,sans-serif;padding:8px 12px;border-radius:999px;opacity:.85"><a href="https://hitechcloud.vn" target="_blank" rel="noopener" style="${link}">Tạo bởi HiTechCloud</a> · <a href="/_htc/report?site=${Number(siteId)}&amp;page=${encodeURIComponent(slug || 'index')}" target="_blank" rel="noopener nofollow" style="${link};opacity:.7">Báo cáo vi phạm</a></div>`;
+}
 
 // formSlug: slug the visitor requested (an A/B variant is served at the original
 // URL, so thank-you redirects return there); formParams: extra lead attribution;
@@ -254,7 +258,7 @@ ${head}
 ${notice ? `<div style="background:#16a34a;color:#fff;text-align:center;padding:12px;font-family:system-ui,sans-serif">${escapeHtml(notice)}</div>` : ''}
 ${errorNotice ? `<div role="alert" data-htc-lead-error style="background:#dc2626;color:#fff;text-align:center;padding:12px;font-family:system-ui,sans-serif">${escapeHtml(errorNotice)}</div>` : ''}
 ${body}
-${showBranding ? BRANDING : ''}
+${showBranding ? branding(site.id, formSlug || page.slug) : ''}
 ${body.includes('data-htc-countdown') ? COUNTDOWN_JS : ''}
 ${widgetScripts(body)}
 ${/<form\b/i.test(body) ? ATTRIBUTION_JS : ''}

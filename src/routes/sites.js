@@ -8,6 +8,7 @@ const { createRateLimiter } = require('../ratelimit');
 const { parse: parseSettings } = require('../siteSettings');
 const { pickVariant, recordAbView } = require('./abtests');
 const leadGuard = require('../leadGuard');
+const { suspendedPage } = require('../safety');
 
 // Public base URL of a site, used for canonical links and sitemaps.
 // Settings as allowed by the workspace's current plan (paid features stop
@@ -48,6 +49,7 @@ function createSitesRouter({ db, config, access, notifier }) {
   }
 
   function servePublished(req, res, site, pageSlug, sandbox) {
+    if (site.suspended_at) return sendHtml(res, suspendedPage(), sandbox);
     const requested = db
       .prepare('SELECT * FROM pages WHERE site_id = ? AND slug = ? AND published_html IS NOT NULL')
       .get(site.id, pageSlug || 'index');
@@ -101,7 +103,8 @@ function createSitesRouter({ db, config, access, notifier }) {
   // Caddy on-demand TLS "ask" hook: only issue certificates for hosts we serve.
   r.get('/_htc/tls-ask', (req, res) => {
     const domain = String(req.query.domain || '').toLowerCase();
-    res.status(siteForHost(domain) ? 200 : 404).end();
+    const site = siteForHost(domain);
+    res.status(site && !site.suspended_at ? 200 : 404).end();
   });
 
   // Lead capture endpoint used by every published form (all hosts).
@@ -112,6 +115,7 @@ function createSitesRouter({ db, config, access, notifier }) {
   async function handleLead(req, res) {
     const site = db.prepare('SELECT * FROM sites WHERE id = ?').get(Number(req.query.site));
     if (!site) return sendHtml(res, renderMessage('404', 'Không tìm thấy website'));
+    if (site.suspended_at) return sendHtml(res, suspendedPage());
     const rawSlug = String(req.query.page || '');
     const pageSlug = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(rawSlug) ? rawSlug : 'index';
     const prefix = siteForHost(req.hostname) ? '' : `/p/${site.subdomain}`;
@@ -209,6 +213,7 @@ function createSitesRouter({ db, config, access, notifier }) {
   }
 
   function sendSeoFile(res, site, file) {
+    if (site.suspended_at) return res.status(451).end();
     res.setHeader('Cache-Control', 'public, max-age=300');
     if (file === 'sitemap.xml') return res.type('application/xml').send(sitemap(site));
     res.type('text/plain').send(`User-agent: *\nAllow: /\nSitemap: ${siteBaseUrl(site, config)}/sitemap.xml\n`);

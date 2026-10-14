@@ -64,6 +64,7 @@
     </div>
     <button class="btn" id="new-page-btn">+ Thêm trang</button>
   </div>
+  <div class="alert" id="suspended" role="alert" style="font-weight:600;border:1px solid #dc2626"></div>
 
   <div class="tabs" role="tablist">
     <button class="active" data-tab="pages">Trang</button>
@@ -295,6 +296,9 @@ async function load() {
   site = await api(`/sites/${siteId}`);
   document.title = `${site.name} · HiTechCloud LandingPage`;
   $('#site-name').textContent = site.name;
+  $('#suspended').textContent = site.suspended_at
+    ? `Website đã bị tạm ngưng do vi phạm điều khoản sử dụng${site.suspended_reason ? ` (lý do: ${site.suspended_reason})` : ''}. Các trang không thể truy cập, không nhận form và không thể xuất bản. Vui lòng liên hệ bộ phận hỗ trợ nếu cho rằng đây là nhầm lẫn.`
+    : '';
   const url = HTC.publicUrl(site);
   $('#site-url').href = url;
   $('#site-url').textContent = site.custom_domain || url;

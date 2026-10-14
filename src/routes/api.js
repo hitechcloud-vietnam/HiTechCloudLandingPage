@@ -16,6 +16,7 @@ const { createDomainVerifier, newDomainToken, CLAIM_TTL_HOURS } = require('../do
 const { transaction } = require('../db');
 const { PLANS, workspacePlan, workspacePlanById, effectivePlanId, publicPlan } = require('../plans');
 const { renderTemplate, listTemplates, listBlocks, BASE_CSS } = require('../templates');
+const { createSafety, assertSiteActive } = require('../safety');
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const DOMAIN_RE = /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
@@ -52,6 +53,7 @@ function csvCell(value) {
 function createApiRouter({ db, sessions, access, billing, mailer, config, notifier }) {
   const r = express.Router();
   const domains = createDomainVerifier(config);
+  const safety = createSafety({ db, config, mailer });
   const loginLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 10 });
   const signupLimiter = createRateLimiter({ windowMs: 3600_000, max: 10 });
   // Slows down guessing of coupon codes.
@@ -129,10 +131,11 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
     const email = str(req.body.email, { max: 200 }).toLowerCase();
     const password = typeof req.body.password === 'string' ? req.body.password : '';
     if (!loginLimiter(`${req.ip}:${email}`)) throw new HttpError(429, 'Đăng nhập sai quá nhiều lần, vui lòng thử lại sau 15 phút');
-    const user = db.prepare('SELECT id, password_hash FROM users WHERE email = ?').get(email);
+    const user = db.prepare('SELECT id, password_hash, suspended_at FROM users WHERE email = ?').get(email);
     if (!user || !verifyPassword(password, user.password_hash)) {
       throw new HttpError(401, 'Email hoặc mật khẩu không đúng');
     }
+    if (user.suspended_at) throw new HttpError(403, 'Tài khoản đã bị tạm ngưng do vi phạm điều khoản sử dụng. Vui lòng liên hệ bộ phận hỗ trợ.');
     sessions.create(res, user.id);
     return { ok: true };
   }));
@@ -617,9 +620,11 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   r.post('/pages/:pid/publish', h((req) => {
     const { page } = access.page(req.user, req.params.pid);
     assertEmailVerified(db, req.user.id, 'xuất bản trang');
+    assertSiteActive(db, page.site_id);
     snapshotVersion(db, page.id, req.user.id);
     db.prepare("UPDATE pages SET published_html = draft_html, published_css = draft_css, published_at = datetime('now') WHERE id = ?").run(page.id);
-    return { ok: true, publishedAt: db.prepare('SELECT published_at FROM pages WHERE id = ?').get(page.id).published_at };
+    const review = safety.onPublish(page.id);
+    return { ok: true, publishedAt: db.prepare('SELECT published_at FROM pages WHERE id = ?').get(page.id).published_at, ...(review.suspended && { suspended: true }) };
   }));
 
   r.post('/pages/:pid/unpublish', h((req) => {
