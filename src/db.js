@@ -163,6 +163,23 @@ CREATE TABLE IF NOT EXISTS api_keys (
 
 CREATE INDEX IF NOT EXISTS idx_api_keys_workspace ON api_keys(workspace_id, id);
 CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(prefix);
+
+CREATE TABLE IF NOT EXISTS coupons (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  percent_off INTEGER CHECK (percent_off BETWEEN 1 AND 100),
+  amount_off_vnd INTEGER CHECK (amount_off_vnd > 0),
+  applies_to_plans TEXT,
+  applies_to_months INTEGER CHECK (applies_to_months IN (1, 12)),
+  max_redemptions INTEGER,
+  redeemed_count INTEGER NOT NULL DEFAULT 0,
+  expires_at TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  CHECK ((percent_off IS NULL) <> (amount_off_vnd IS NULL))
+);
+
 CREATE INDEX IF NOT EXISTS idx_ab_page ON ab_tests(page_id, status);
 CREATE INDEX IF NOT EXISTS idx_assets_workspace ON assets(workspace_id, id);
 CREATE INDEX IF NOT EXISTS idx_versions_page ON page_versions(page_id, id);
@@ -206,6 +223,9 @@ function migrate(db) {
   add('ab_tests', 'views_b', 'INTEGER NOT NULL DEFAULT 0');
   // Accounts created before email verification existed count as verified.
   if (add('users', 'email_verified_at', 'TEXT')) db.exec('UPDATE users SET email_verified_at = created_at');
+  add('orders', 'coupon_code', 'TEXT');
+  add('orders', 'discount_vnd', 'INTEGER NOT NULL DEFAULT 0');
+  add('orders', 'list_amount', 'INTEGER');
 }
 
 // Runs fn inside a transaction, rolling back on error.

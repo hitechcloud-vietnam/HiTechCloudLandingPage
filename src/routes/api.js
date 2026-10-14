@@ -8,6 +8,7 @@ const { HttpError } = require('../access');
 const { addMonths } = require('../billing');
 const { createRateLimiter } = require('../ratelimit');
 const { acceptInvitation, createInvitation, sendVerificationEmail, isEmailVerified, assertEmailVerified } = require('./account');
+const { couponView, parseCouponInput } = require('../coupons');
 const siteSettings = require('../siteSettings');
 const { snapshotVersion } = require('./content');
 const { assertNotInRunningTest } = require('./abtests');
@@ -53,6 +54,11 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   const domains = createDomainVerifier(config);
   const loginLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 10 });
   const signupLimiter = createRateLimiter({ windowMs: 3600_000, max: 10 });
+  // Slows down guessing of coupon codes.
+  const couponLimiter = createRateLimiter({ windowMs: 10 * 60_000, max: 60 });
+  const checkCouponRate = (req) => {
+    if (!couponLimiter(`u${req.user.id}`)) throw new HttpError(429, 'Bạn thử mã giảm giá quá nhiều lần, vui lòng thử lại sau');
+  };
 
   // Wrap handlers so thrown HttpErrors become JSON responses.
   const h = handler;
@@ -187,13 +193,25 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   r.post('/workspaces/:wid/checkout', ha(async (req) => {
     const { ws } = access.workspace(req.user, req.params.wid, 'admin');
     assertEmailVerified(db, req.user.id, 'thanh toán nâng cấp gói');
-    return billing.checkout({ ws, user: req.user, plan: req.body.plan, months: req.body.months, provider: req.body.provider });
+    const { plan, months, provider, coupon } = req.body;
+    if (coupon) checkCouponRate(req);
+    return billing.checkout({ ws, user: req.user, plan, months, provider, coupon });
+  }));
+
+  r.post('/workspaces/:wid/coupon/preview', h((req) => {
+    access.workspace(req.user, req.params.wid, 'admin');
+    checkCouponRate(req);
+    const { valid, listAmount, discount, amount, message } = billing.quote(req.body);
+    return { valid, listAmount, discount, amount, message };
   }));
 
   r.get('/workspaces/:wid/orders', h((req) => {
     const { ws } = access.workspace(req.user, req.params.wid);
     return db
-      .prepare('SELECT id, plan, months, amount, provider, status, checkout_url, created_at, paid_at FROM orders WHERE workspace_id = ? ORDER BY id DESC LIMIT 100')
+      .prepare(
+        `SELECT id, plan, months, amount, list_amount, discount_vnd, coupon_code, provider, status, checkout_url, created_at, paid_at
+         FROM orders WHERE workspace_id = ? ORDER BY id DESC LIMIT 100`
+      )
       .all(ws.id)
       .map((o) => ({ ...o, checkout_url: o.status === 'pending' ? o.checkout_url : null }));
   }));
@@ -235,11 +253,52 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   r.get('/admin/orders', requireSuperAdmin, h(() =>
     db
       .prepare(
-        `SELECT o.id, o.workspace_id, w.name AS workspace_name, o.plan, o.months, o.amount, o.provider, o.status, o.order_code, o.created_at, o.paid_at
+        `SELECT o.id, o.workspace_id, w.name AS workspace_name, o.plan, o.months, o.amount, o.discount_vnd, o.coupon_code, o.provider, o.status, o.order_code, o.created_at, o.paid_at
          FROM orders o LEFT JOIN workspaces w ON w.id = o.workspace_id ORDER BY o.id DESC LIMIT 200`
       )
       .all()
   ));
+
+  // Coupons: discount value and code are fixed after creation (orders refer to them).
+  const couponById = (id) => {
+    const row = db.prepare('SELECT * FROM coupons WHERE id = ?').get(id);
+    if (!row) throw new HttpError(404, 'Không tìm thấy mã giảm giá');
+    return row;
+  };
+
+  r.get('/admin/coupons', requireSuperAdmin, h(() =>
+    db
+      .prepare(
+        `SELECT c.*,
+           (SELECT COALESCE(SUM(o.discount_vnd), 0) FROM orders o WHERE o.coupon_code = c.code AND o.status = 'paid') AS discount_total_vnd
+         FROM coupons c ORDER BY c.id DESC`
+      )
+      .all()
+      .map(couponView)
+  ));
+
+  r.post('/admin/coupons', requireSuperAdmin, h((req, res) => {
+    const c = parseCouponInput(req.body, { create: true });
+    const cols = Object.keys(c);
+    try {
+      const info = db.prepare(`INSERT INTO coupons (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...Object.values(c));
+      res.status(201);
+      return couponView(couponById(Number(info.lastInsertRowid)));
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new HttpError(409, 'Mã giảm giá đã tồn tại');
+      throw err;
+    }
+  }));
+
+  r.patch('/admin/coupons/:id', requireSuperAdmin, h((req) => {
+    const current = couponById(req.params.id);
+    const c = parseCouponInput(req.body, { current });
+    const cols = Object.keys(c);
+    if (cols.length) {
+      db.prepare(`UPDATE coupons SET ${cols.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...Object.values(c), current.id);
+    }
+    return couponView(couponById(current.id));
+  }));
 
   // Manual plan grant (e.g. bank transfer outside the gateways, enterprise deals).
   r.post('/workspaces/:wid/plan', requireSuperAdmin, h((req) => {

@@ -17,6 +17,7 @@ Lõi trình thiết kế dùng [GrapesJS](https://github.com/GrapesJS/grapesjs).
 | Nhiều người thuê | Nhiều workspace cho mỗi người dùng, vai trò Chủ sở hữu / Quản trị viên / Biên tập viên, dữ liệu cách ly theo workspace |
 | Gói dịch vụ | Miễn phí / Pro / Business, giới hạn số website, trang, thành viên, lead/tháng, tên miền riêng, gỡ nhãn "Tạo bởi HiTechCloud" |
 | Thanh toán | **payOS** (VietQR) và **Pay2S**. Thanh toán theo chu kỳ 1 tháng hoặc 12 tháng (tặng 2 tháng). Gói tự hết hạn và quay về gói Miễn phí. Gia hạn được cộng dồn vào thời gian còn lại. Webhook xác thực chữ ký HMAC, xử lý trùng lặp an toàn (idempotent) và đối chiếu số tiền |
+| Mã giảm giá | Super admin tạo mã giảm theo % hoặc số tiền cố định, giới hạn theo gói, chu kỳ (1/12 tháng), số lượt dùng và ngày hết hạn; bật/tắt bất kỳ lúc nào. Khách nhập mã ở tab Gói dịch vụ để xem giá sau giảm. Cổng thanh toán nhận số tiền đã giảm (tối thiểu 10.000đ); mã giảm 100% kích hoạt gói ngay, không qua cổng. Lượt dùng chỉ được tính khi đơn đã thanh toán. Email xác nhận ghi rõ giá gốc, số tiền giảm và số tiền đã trả |
 | Quản trị nền tảng | `/app/admin`: số người dùng, workspace trả phí, MRR, doanh thu, danh sách khách hàng, lịch sử giao dịch, cấp gói thủ công |
 | Thống kê | Tab “Thống kê” cho từng website: chọn 7/30/90 ngày, lượt xem (bỏ qua bot), lead, tỉ lệ chuyển đổi và % thay đổi so với kỳ trước; biểu đồ theo ngày, trang hiệu quả nhất, nguồn khách hàng (UTM, website giới thiệu, trực tiếp) và trạng thái lead |
 | Tích hợp marketing | Google Analytics 4, Google Tag Manager, Facebook Pixel, TikTok Pixel. Sự kiện chuyển đổi (Lead) gửi tự động khi khách điền form. Favicon, og:image, canonical, `sitemap.xml`, `robots.txt`. Chèn mã tùy chỉnh vào `<head>`/`<body>` (gói Pro trở lên) |
@@ -192,11 +193,14 @@ test/                Test API bằng node:test
 | GET | `/api/auth/me` | Người dùng và danh sách workspace |
 | GET/PATCH/DELETE | `/api/workspaces/:id` | Workspace, gói, mức sử dụng |
 | GET/POST/DELETE | `/api/workspaces/:id/members[/:uid]` | Thành viên |
-| POST | `/api/workspaces/:id/checkout` | Tạo đơn thanh toán `{plan, months, provider}`, trả về `checkoutUrl` |
+| POST | `/api/workspaces/:id/checkout` | Tạo đơn thanh toán `{plan, months, provider, coupon?}`, trả về `checkoutUrl` (đơn giảm 100% trả về `paid: true`) |
+| POST | `/api/workspaces/:id/coupon/preview` | Xem giá với mã giảm giá `{coupon, plan, months}` → `{valid, listAmount, discount, amount, message}` |
 | GET | `/api/workspaces/:id/orders` | Lịch sử thanh toán |
 | POST | `/api/billing/webhooks/payos`, `/api/billing/webhooks/pay2s` | Webhook / IPN từ cổng thanh toán |
 | GET | `/api/admin/stats`, `/api/admin/workspaces`, `/api/admin/orders` | Quản trị nền tảng |
 | POST | `/api/workspaces/:id/plan` | Cấp gói thủ công `{plan, months?}` (chỉ super admin) |
+| GET/POST | `/api/admin/coupons` | Danh sách (kèm lượt dùng) và tạo mã giảm giá `{code, percent_off \| amount_off_vnd, applies_to_plans?, applies_to_months?, max_redemptions?, expires_at?, note?}` (chỉ super admin) |
+| PATCH | `/api/admin/coupons/:id` | Bật/tắt, sửa ghi chú, hạn dùng, giới hạn lượt, gói/chu kỳ áp dụng (chỉ super admin) |
 | GET/POST | `/api/workspaces/:id/sites` | Website |
 | GET/PATCH/DELETE | `/api/sites/:id` | Website, tên miền riêng |
 | GET/POST | `/api/sites/:id/pages` | Trang |

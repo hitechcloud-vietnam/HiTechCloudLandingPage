@@ -25,6 +25,7 @@
   <div class="tabs" role="tablist">
     <button class="active" data-tab="workspaces">Khách hàng (workspace)</button>
     <button data-tab="orders">Giao dịch</button>
+    <button data-tab="coupons">Mã giảm giá</button>
   </div>
 
   <section data-panel="workspaces">
@@ -41,6 +42,28 @@
       <tbody id="orders"></tbody>
     </table></div>
   </section>
+
+  <section data-panel="coupons" hidden>
+    <form class="card" id="coupon-form" style="margin-bottom:16px">
+      <h3 style="margin-top:0">Tạo mã giảm giá</h3>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:0 16px">
+        <div><label for="c-code">Mã</label><input id="c-code" name="code" required maxlength="32" pattern="[A-Za-z0-9_\-]{3,32}" placeholder="TET2027" style="text-transform:uppercase"></div>
+        <div><label for="c-type">Kiểu giảm</label><select id="c-type" name="type"><option value="percent">Theo %</option><option value="amount">Số tiền cố định (đ)</option></select></div>
+        <div><label for="c-value">Mức giảm</label><input id="c-value" name="value" type="number" min="1" required placeholder="20"></div>
+        <div><label for="c-months">Chu kỳ</label><select id="c-months" name="applies_to_months"><option value="">Mọi chu kỳ</option><option value="1">1 tháng</option><option value="12">12 tháng</option></select></div>
+        <div><label for="c-max">Số lượt tối đa</label><input id="c-max" name="max_redemptions" type="number" min="1" placeholder="Không giới hạn"></div>
+        <div><label for="c-exp">Hết hạn</label><input id="c-exp" name="expires_at" type="date"></div>
+      </div>
+      <label>Áp dụng cho gói <span class="hint">(bỏ trống = mọi gói trả phí)</span></label>
+      <div class="row" id="c-plans" style="justify-content:flex-start"></div>
+      <label for="c-note">Ghi chú</label><input id="c-note" name="note" maxlength="200" placeholder="VD: Khuyến mãi Tết cho khách cũ">
+      <div style="margin-top:12px"><button class="btn" type="submit">Tạo mã</button></div>
+    </form>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Mã</th><th>Giảm</th><th>Áp dụng</th><th>Đã dùng</th><th>Tổng đã giảm</th><th>Hết hạn</th><th>Ghi chú</th><th>Trạng thái</th><th></th></tr></thead>
+      <tbody id="coupons"></tbody>
+    </table></div>
+  </section>
 </main>
 
 <script src="/assets/api.js"></script>
@@ -48,14 +71,17 @@
 const { api, esc, $ } = HTC;
 const vnd = (n) => `${Number(n).toLocaleString('vi-VN')}đ`;
 const date = (s) => (s ? new Date(s.includes('T') ? s : `${s.replace(' ', 'T')}Z`).toLocaleDateString('vi-VN') : '—');
-let workspaces = [], plans = [];
+let workspaces = [], plans = [], coupons = [];
 
 function showError(err) { $('#error').textContent = err ? err.message : ''; }
 
 async function load() {
-  const [stats, ws, orders, planList] = await Promise.all([api('/admin/stats'), api('/admin/workspaces'), api('/admin/orders'), api('/plans')]);
+  const [stats, ws, orders, planList, couponList] = await Promise.all([
+    api('/admin/stats'), api('/admin/workspaces'), api('/admin/orders'), api('/plans'), api('/admin/coupons'),
+  ]);
   workspaces = ws;
   plans = planList;
+  coupons = couponList;
   $('#stats').innerHTML = [
     ['Người dùng', stats.users],
     ['Workspace', stats.workspaces],
@@ -68,9 +94,10 @@ async function load() {
     ['Lead tháng này', stats.leadsThisMonth],
   ].map(([l, v]) => `<div class="card"><span class="muted">${l}</span><strong>${esc(v)}</strong></div>`).join('');
   renderWorkspaces();
+  renderCoupons();
   $('#orders').innerHTML = orders.map((o) => `
     <tr><td>#${o.id}</td><td>${esc(o.workspace_name || o.workspace_id)}</td><td>${esc(o.plan)} · ${o.months}th</td>
-    <td>${vnd(o.amount)}</td><td>${esc(o.provider)}</td><td><code>${esc(o.order_code)}</code></td>
+    <td>${vnd(o.amount)}${o.coupon_code ? `<div class="hint">${esc(o.coupon_code)} · -${vnd(o.discount_vnd)}</div>` : ''}</td><td>${esc(o.provider)}</td><td><code>${esc(o.order_code)}</code></td>
     <td><span class="badge ${o.status === 'paid' ? 'badge-success' : o.status === 'failed' ? 'badge-danger' : ''}">${esc(o.status)}</span></td>
     <td>${esc(o.paid_at || o.created_at)}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Chưa có giao dịch.</td></tr>';
 }
@@ -88,6 +115,66 @@ function renderWorkspaces() {
       <td><select data-ws="${w.id}" aria-label="Cấp gói"><option value="">Cấp gói…</option>${plans.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></td></tr>`)
     .join('');
 }
+
+function renderCoupons() {
+  const planName = (id) => (plans.find((p) => p.id === id) || { name: id }).name;
+  if (!$('#c-plans').children.length) {
+    $('#c-plans').innerHTML = plans.filter((p) => p.priceVnd > 0)
+      .map((p) => `<label class="inline" style="font-weight:400"><input type="checkbox" value="${p.id}" style="width:auto"> ${esc(p.name)}</label>`).join('');
+  }
+  const now = new Date();
+  $('#coupons').innerHTML = coupons.map((c) => {
+    const expired = c.expires_at && new Date(c.expires_at) <= now;
+    const exhausted = c.max_redemptions !== null && c.redeemed_count >= c.max_redemptions;
+    const [label, cls] = !c.active ? ['Đã tắt', ''] : expired ? ['Hết hạn', 'badge-danger'] : exhausted ? ['Hết lượt', 'badge-danger'] : ['Đang chạy', 'badge-success'];
+    const scope = [c.applies_to_plans ? c.applies_to_plans.map(planName).join(', ') : 'Mọi gói', c.applies_to_months ? `${c.applies_to_months} tháng` : 'mọi chu kỳ'].join(' · ');
+    return `<tr><td><code>${esc(c.code)}</code></td>
+      <td>${c.percent_off !== null ? `${c.percent_off}%` : vnd(c.amount_off_vnd)}</td>
+      <td>${esc(scope)}</td>
+      <td>${c.redeemed_count} / ${c.max_redemptions ?? '∞'}</td>
+      <td>${vnd(c.discount_total_vnd)}</td>
+      <td>${c.expires_at ? date(c.expires_at) : '—'}</td>
+      <td>${esc(c.note)}</td>
+      <td><span class="badge ${cls}">${label}</span></td>
+      <td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" data-toggle="${c.id}">${c.active ? 'Tắt' : 'Bật'}</button>
+        <button class="btn btn-ghost btn-sm" data-edit="${c.id}">Sửa</button></td></tr>`;
+  }).join('') || '<tr><td colspan="9" class="muted">Chưa có mã giảm giá.</td></tr>';
+}
+
+$('#coupon-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  const f = HTC.formData(e.target);
+  const body = {
+    code: f.code, note: f.note, expires_at: f.expires_at, max_redemptions: f.max_redemptions, applies_to_months: f.applies_to_months,
+    applies_to_plans: [...document.querySelectorAll('#c-plans input:checked')].map((i) => i.value),
+    [f.type === 'percent' ? 'percent_off' : 'amount_off_vnd']: f.value,
+  };
+  try {
+    await api('/admin/coupons', { method: 'POST', body });
+    e.target.reset();
+    await load();
+  } catch (err) { showError(err); }
+};
+
+$('#coupons').onclick = async (e) => {
+  const { toggle, edit } = e.target.dataset;
+  const c = coupons.find((x) => String(x.id) === (toggle || edit));
+  if (!c) return;
+  showError();
+  let body;
+  if (toggle) body = { active: !c.active };
+  else {
+    const note = prompt('Ghi chú', c.note);
+    if (note === null) return;
+    const exp = prompt('Ngày hết hạn (YYYY-MM-DD, để trống = không hết hạn)', c.expires_at ? new Date(c.expires_at).toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }) : '');
+    if (exp === null) return;
+    const max = prompt('Số lượt tối đa (để trống = không giới hạn)', c.max_redemptions ?? '');
+    if (max === null) return;
+    body = { note, expires_at: exp.trim(), max_redemptions: max.trim() };
+  }
+  try { await api(`/admin/coupons/${c.id}`, { method: 'PATCH', body }); await load(); } catch (err) { showError(err); }
+};
 
 $('#logout').onclick = HTC.logout;
 $('#search').oninput = renderWorkspaces;

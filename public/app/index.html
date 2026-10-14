@@ -76,6 +76,13 @@
             <select id="provider"></select></label>
         </div>
       </div>
+      <form class="card row" id="coupon-form" style="justify-content:flex-start" hidden>
+        <label class="inline">Mã giảm giá
+          <input id="coupon" maxlength="32" autocomplete="off" placeholder="VD: TET2027" style="text-transform:uppercase;width:12em"></label>
+        <button class="btn btn-ghost btn-sm" type="submit">Áp dụng</button>
+        <button class="btn btn-ghost btn-sm" type="button" id="coupon-clear" hidden>Bỏ mã</button>
+        <span class="muted" id="coupon-msg" role="status"></span>
+      </form>
       <div class="grid" id="plans"></div>
       <div class="card">
         <h3 style="margin-top:0">Lịch sử thanh toán</h3>
@@ -174,6 +181,8 @@ const { api, esc, $, formData, slugify, formatVnd, limit } = HTC;
 const ROLE_LABEL = { owner: 'Chủ sở hữu', admin: 'Quản trị viên', editor: 'Biên tập viên' };
 const ORDER_STATUS = { pending: ['Chờ thanh toán', ''], paid: ['Đã thanh toán', 'badge-success'], cancelled: ['Đã hủy', ''], failed: ['Lỗi', 'badge-danger'] };
 let me, ws, plans = [], providers = [];
+// Applied coupon: code plus a preview per paid plan for the selected cycle.
+let coupon = { code: '', quotes: {} };
 const params = new URLSearchParams(location.search);
 
 function selectTab(name) {
@@ -265,6 +274,35 @@ async function loadPlans() {
     : ws.plan !== ws.effectivePlan ? 'Gói trả phí đã hết hạn' : '';
   $('#provider').innerHTML = providers.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
   $('#pay-options').hidden = !providers.length || !canPay;
+  $('#coupon-form').hidden = !canPay;
+  if (!canPay) coupon = { code: '', quotes: {} };
+  await previewCoupon();
+}
+
+// Prices every paid plan with the applied coupon for the selected cycle.
+async function previewCoupon() {
+  const months = Number($('#cycle').value);
+  coupon.quotes = {};
+  if (coupon.code) {
+    const paid = plans.filter((p) => p.priceVnd > 0);
+    try {
+      const results = await Promise.all(paid.map((p) =>
+        api(`/workspaces/${ws.id}/coupon/preview`, { method: 'POST', body: { coupon: coupon.code, plan: p.id, months } })));
+      paid.forEach((p, i) => { coupon.quotes[p.id] = results[i]; });
+      const okPlans = paid.filter((p) => coupon.quotes[p.id].valid);
+      $('#coupon-msg').textContent = okPlans.length
+        ? `${coupon.quotes[okPlans[0].id].message}${okPlans.length < paid.length ? ` (gói ${okPlans.map((p) => p.name).join(', ')})` : ''}`
+        : results[0].message;
+      $('#coupon-msg').className = okPlans.length ? 'badge badge-success' : 'badge badge-danger';
+    } catch (err) {
+      $('#coupon-msg').textContent = err.message;
+      $('#coupon-msg').className = 'badge badge-danger';
+    }
+  } else {
+    $('#coupon-msg').textContent = '';
+    $('#coupon-msg').className = 'muted';
+  }
+  $('#coupon-clear').hidden = !coupon.code;
   renderPlans();
 }
 
@@ -274,10 +312,15 @@ function renderPlans() {
   $('#plans').innerHTML = plans.map((p) => {
     const current = p.id === ws.effectivePlan;
     const total = p.priceVnd * (months === 12 ? 10 : 1);
+    const q = coupon.quotes[p.id];
+    const price = q && q.valid
+      ? `<s style="opacity:.7">${total.toLocaleString('vi-VN')}đ</s> ${q.amount.toLocaleString('vi-VN')}đ`
+      : `${total.toLocaleString('vi-VN')}đ`;
     let action = '';
     if (p.priceVnd > 0) {
-      action = canPay
-        ? `<button class="btn btn-sm" data-buy="${p.id}">${current ? 'Gia hạn' : 'Nâng cấp'} · ${total.toLocaleString('vi-VN')}đ</button>`
+      // A fully discounted order needs no payment gateway.
+      action = canPay || (q && q.valid && q.amount === 0 && (ws.role === 'owner' || ws.role === 'admin'))
+        ? `<button class="btn btn-sm" data-buy="${p.id}">${current ? 'Gia hạn' : 'Nâng cấp'} · ${price}</button>`
         : '<a class="btn btn-ghost btn-sm" href="mailto:sales@hitechcloud.vn">Liên hệ nâng cấp</a>';
     }
     if (me.user.isSuperAdmin && !current) action += ` <button class="btn btn-ghost btn-sm" data-plan="${p.id}">Cấp gói (admin)</button>`;
@@ -305,8 +348,11 @@ async function loadOrders() {
   $('#orders').innerHTML = orders.length
     ? orders.map((o) => {
       const [label, cls] = ORDER_STATUS[o.status];
-      return `<tr><td>#${o.id}</td><td>${esc(planName(o.plan))} · ${o.months} tháng</td><td>${o.amount.toLocaleString('vi-VN')}đ</td>
-        <td>${esc(o.provider)}</td><td><span class="badge ${cls}">${label}</span>
+      const discount = o.discount_vnd > 0
+        ? `<div class="hint">Giá gốc ${(o.list_amount || o.amount + o.discount_vnd).toLocaleString('vi-VN')}đ · giảm ${o.discount_vnd.toLocaleString('vi-VN')}đ (${esc(o.coupon_code)})</div>`
+        : '';
+      return `<tr><td>#${o.id}</td><td>${esc(planName(o.plan))} · ${o.months} tháng</td><td>${o.amount.toLocaleString('vi-VN')}đ${discount}</td>
+        <td>${o.provider === 'coupon' ? 'Mã giảm giá' : esc(o.provider)}</td><td><span class="badge ${cls}">${label}</span>
         ${o.checkout_url ? ` <a href="${esc(o.checkout_url)}">Tiếp tục thanh toán</a>` : ''}</td>
         <td>${esc(o.paid_at || o.created_at)}</td></tr>`;
     }).join('')
@@ -330,7 +376,18 @@ $('#ws-select').onchange = (e) => loadWorkspace(Number(e.target.value)).catch(sh
 
 document.querySelectorAll('.tabs button').forEach((btn) => { btn.onclick = () => selectTab(btn.dataset.tab); });
 if (params.get('tab')) selectTab(params.get('tab'));
-$('#cycle').onchange = renderPlans;
+$('#cycle').onchange = () => previewCoupon().catch(showError);
+$('#coupon-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  coupon.code = $('#coupon').value.trim().toUpperCase();
+  try { await previewCoupon(); } catch (err) { showError(err); }
+};
+$('#coupon-clear').onclick = () => {
+  coupon.code = '';
+  $('#coupon').value = '';
+  previewCoupon().catch(showError);
+};
 
 $('#member-form').onsubmit = async (e) => {
   e.preventDefault();
@@ -357,14 +414,17 @@ $('#members').onclick = async (e) => {
 };
 
 $('#plans').onclick = async (e) => {
-  const { plan, buy } = e.target.dataset;
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const { plan, buy } = btn.dataset;
   showError();
   try {
     if (buy) {
-      e.target.disabled = true;
+      btn.disabled = true;
+      const q = coupon.quotes[buy];
       const res = await api(`/workspaces/${ws.id}/checkout`, {
         method: 'POST',
-        body: { plan: buy, months: Number($('#cycle').value), provider: $('#provider').value },
+        body: { plan: buy, months: Number($('#cycle').value), provider: $('#provider').value, ...(q && q.valid ? { coupon: coupon.code } : {}) },
       });
       location.href = res.checkoutUrl;
     } else if (plan) {
@@ -373,7 +433,7 @@ $('#plans').onclick = async (e) => {
       await api(`/workspaces/${ws.id}/plan`, { method: 'POST', body: { plan, months } });
       await loadWorkspace(ws.id);
     }
-  } catch (err) { showError(err); e.target.disabled = false; }
+  } catch (err) { showError(err); btn.disabled = false; }
 };
 
 $('#invites').onclick = async (e) => {
