@@ -7,6 +7,7 @@ const { requireUser } = require('../auth');
 const { transaction } = require('../db');
 const { workspacePlanById } = require('../plans');
 const { snapshotVersion } = require('./content');
+const { createSafety } = require('../safety');
 
 // Normal CDF via Abramowitz–Stegun erf approximation (enough for a confidence readout).
 function normalCdf(z) {
@@ -27,7 +28,8 @@ function confidence(convA, viewsA, convB, viewsB) {
   return Math.round((2 * normalCdf(z) - 1) * 1000) / 10;
 }
 
-function createAbRouter({ db, access }) {
+function createAbRouter({ db, access, config, mailer }) {
+  const safety = createSafety({ db, config, mailer });
   const r = express.Router();
   r.use(requireUser);
 
@@ -37,7 +39,7 @@ function createAbRouter({ db, access }) {
   // leads carry the test id + bucket from the form, so pre-test traffic and
   // direct visits to the variant URL never skew the comparison.
   function stats(test) {
-    const leads = (bucket) => db.prepare('SELECT COUNT(*) AS n FROM leads WHERE ab_test_id = ? AND ab_bucket = ?').get(test.id, bucket).n;
+    const leads = (bucket) => db.prepare("SELECT COUNT(*) AS n FROM leads WHERE ab_test_id = ? AND ab_bucket = ? AND status != 'spam'").get(test.id, bucket).n;
     const a = { pageId: test.page_id, views: test.views_a, leads: leads('a') };
     const b = { pageId: test.variant_page_id, views: test.views_b, leads: leads('b') };
     for (const x of [a, b]) x.rate = x.views ? Math.round((x.leads / x.views) * 10000) / 100 : 0;
@@ -97,6 +99,8 @@ function createAbRouter({ db, access }) {
         ).run(test.variant_page_id, test.page_id);
       }
     });
+    // The variant was scanned at its own URL; its content now serves the original URL too.
+    if (winner === 'b') safety.onPublish(test.page_id);
     return view(db.prepare('SELECT * FROM ab_tests WHERE id = ?').get(test.id));
   }));
 

@@ -97,6 +97,13 @@ CREATE TABLE IF NOT EXISTS password_resets (
   used_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS email_verifications (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL,
+  used_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS invitations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -142,6 +149,71 @@ CREATE TABLE IF NOT EXISTS ab_tests (
   stopped_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS api_keys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_used_at TEXT,
+  revoked_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS abuse_reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL,
+  page_slug TEXT,
+  url TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL,
+  details TEXT NOT NULL DEFAULT '',
+  contact_email TEXT,
+  ip TEXT,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+  resolution TEXT,
+  resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  resolved_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS safety_flags (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  page_id INTEGER REFERENCES pages(id) ON DELETE CASCADE,
+  score INTEGER NOT NULL,
+  reasons_json TEXT NOT NULL DEFAULT '[]',
+  content_hash TEXT,
+  auto_suspended INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'dismissed', 'actioned')),
+  reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_abuse_reports_status ON abuse_reports(status, id);
+CREATE INDEX IF NOT EXISTS idx_safety_flags_status ON safety_flags(status, id);
+CREATE INDEX IF NOT EXISTS idx_safety_flags_page ON safety_flags(page_id, status);
+CREATE INDEX IF NOT EXISTS idx_api_keys_workspace ON api_keys(workspace_id, id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(prefix);
+
+CREATE TABLE IF NOT EXISTS coupons (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  percent_off INTEGER CHECK (percent_off BETWEEN 1 AND 100),
+  amount_off_vnd INTEGER CHECK (amount_off_vnd > 0),
+  applies_to_plans TEXT,
+  applies_to_months INTEGER CHECK (applies_to_months IN (1, 12)),
+  max_redemptions INTEGER,
+  redeemed_count INTEGER NOT NULL DEFAULT 0,
+  expires_at TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  CHECK ((percent_off IS NULL) <> (amount_off_vnd IS NULL))
+);
+
 CREATE INDEX IF NOT EXISTS idx_ab_page ON ab_tests(page_id, status);
 CREATE INDEX IF NOT EXISTS idx_assets_workspace ON assets(workspace_id, id);
 CREATE INDEX IF NOT EXISTS idx_versions_page ON page_versions(page_id, id);
@@ -164,7 +236,9 @@ function migrate(db) {
   const hasColumn = (table, column) =>
     db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
   const add = (table, column, ddl) => {
-    if (!hasColumn(table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+    if (hasColumn(table, column)) return false;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+    return true;
   };
   add('workspaces', 'plan_expires_at', 'TEXT');
   add('sites', 'settings_json', "TEXT NOT NULL DEFAULT '{}'");
@@ -179,8 +253,23 @@ function migrate(db) {
   add('leads', 'page_id', 'INTEGER');
   add('leads', 'ab_test_id', 'INTEGER');
   add('leads', 'ab_bucket', 'TEXT');
+  add('leads', 'spam_score', 'INTEGER NOT NULL DEFAULT 0');
+  add('leads', 'flags_json', "TEXT NOT NULL DEFAULT '[]'");
+  add('leads', 'duplicate_of', 'INTEGER');
   add('ab_tests', 'views_a', 'INTEGER NOT NULL DEFAULT 0');
   add('ab_tests', 'views_b', 'INTEGER NOT NULL DEFAULT 0');
+  // Accounts created before email verification existed count as verified.
+  if (add('users', 'email_verified_at', 'TEXT')) db.exec('UPDATE users SET email_verified_at = created_at');
+  add('orders', 'coupon_code', 'TEXT');
+  add('orders', 'discount_vnd', 'INTEGER NOT NULL DEFAULT 0');
+  add('orders', 'list_amount', 'INTEGER');
+  // Trust & safety suspensions.
+  add('sites', 'suspended_at', 'TEXT');
+  add('sites', 'suspended_reason', 'TEXT');
+  add('users', 'suspended_at', 'TEXT');
+  add('users', 'terms_accepted_at', 'TEXT');
+  add('users', 'terms_version', 'TEXT');
+  add('users', 'suspended_reason', 'TEXT');
 }
 
 // Runs fn inside a transaction, rolling back on error.

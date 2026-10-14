@@ -7,6 +7,8 @@ const { PLANS, BILLING_CYCLES, effectivePlanId, priceFor } = require('./plans');
 const { createPayOS } = require('./payments/payos');
 const { createPay2S } = require('./payments/pay2s');
 const { HttpError } = require('./access');
+const { normalizeCode, findCoupon, applyCoupon } = require('./coupons');
+const { logger } = require('./logger');
 
 function createProviders(config) {
   const providers = {};
@@ -53,6 +55,7 @@ function newExpiry(ws, currentPlan, order, now) {
 
 function createBilling({ db, config, mailer }) {
   const providers = createProviders(config);
+  const log = (config.logger || logger).child({ component: 'billing' });
 
   function getOrderByCode(provider, code) {
     return db.prepare('SELECT * FROM orders WHERE provider = ? AND order_code = ?').get(provider, String(code));
@@ -67,6 +70,7 @@ function createBilling({ db, config, mailer }) {
       const fresh = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id);
       if (fresh.status === 'paid') return false;
       db.prepare("UPDATE orders SET status = 'paid', paid_at = datetime('now'), provider_ref = COALESCE(?, provider_ref) WHERE id = ?").run(ref || null, order.id);
+      if (fresh.coupon_code) redeemCoupon(fresh);
 
       const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(order.workspace_id);
       if (!ws) return true;
@@ -81,6 +85,15 @@ function createBilling({ db, config, mailer }) {
     return changed;
   }
 
+  // Counts a coupon use once per paid order. The limit is re-checked here; an
+  // order paid after the coupon ran out is still honoured, just logged.
+  function redeemCoupon(order) {
+    const r = db
+      .prepare('UPDATE coupons SET redeemed_count = redeemed_count + 1 WHERE code = ? AND (max_redemptions IS NULL OR redeemed_count < max_redemptions)')
+      .run(order.coupon_code);
+    if (!r.changes) log.warn(`Mã giảm giá ${order.coupon_code} đã hết lượt khi xác nhận đơn #${order.id}; đơn vẫn được kích hoạt`);
+  }
+
   function sendReceipt(orderId) {
     if (!mailer) return;
     const o = db
@@ -91,10 +104,15 @@ function createBilling({ db, config, mailer }) {
       .get(orderId);
     if (!o || !o.email) return;
     const expires = o.plan_expires_at ? new Date(o.plan_expires_at).toLocaleDateString('vi-VN') : '';
+    const vnd = (n) => `${Number(n).toLocaleString('vi-VN')}đ`;
+    const via = o.provider === 'coupon' ? `bằng mã giảm giá ${o.coupon_code}` : `qua ${o.provider}`;
+    const breakdown = o.discount_vnd > 0
+      ? `\nGiá niêm yết: ${vnd(o.list_amount)}\nGiảm giá (mã ${o.coupon_code}): -${vnd(o.discount_vnd)}\nĐã thanh toán: ${vnd(o.amount)}\n`
+      : '';
     mailer.send({
       to: o.email,
       subject: `Xác nhận thanh toán đơn #${o.id} – HiTechCloud`,
-      text: `Chào ${o.name},\n\nChúng tôi đã nhận ${o.amount.toLocaleString('vi-VN')}đ qua ${o.provider} cho gói ${PLANS[o.plan].name} (${o.months} tháng) của workspace "${o.ws_name}".\nGói có hiệu lực đến ${expires}.\n\nQuản lý gói: ${config.appUrl}/app/?tab=billing\nCảm ơn bạn đã sử dụng HiTechCloud!`,
+      text: `Chào ${o.name},\n\nChúng tôi đã nhận ${vnd(o.amount)} ${via} cho gói ${PLANS[o.plan].name} (${o.months} tháng) của workspace "${o.ws_name}".\n${breakdown}Gói có hiệu lực đến ${expires}.\n\nQuản lý gói: ${config.appUrl}/app/?tab=billing\nCảm ơn bạn đã sử dụng HiTechCloud!`,
     });
   }
 
@@ -102,19 +120,45 @@ function createBilling({ db, config, mailer }) {
     db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ? AND status = 'pending'").run(order.id);
   }
 
-  async function checkout({ ws, user, plan, months, provider }) {
-    const p = providers[provider];
-    if (!p) throw new HttpError(400, 'Cổng thanh toán chưa được cấu hình');
+  // Price for a plan/cycle with an optional coupon:
+  // { valid, listAmount, discount, amount, message, code? }.
+  function quote({ plan, months, coupon }) {
     if (!PLANS[plan] || !PLANS[plan].priceVnd) throw new HttpError(400, 'Gói không hợp lệ');
     months = Number(months);
     if (!BILLING_CYCLES[months]) throw new HttpError(400, 'Chu kỳ thanh toán không hợp lệ');
-    const amount = priceFor(plan, months);
+    const listAmount = priceFor(plan, months);
+    const code = normalizeCode(coupon);
+    if (!code) return { valid: false, listAmount, discount: 0, amount: listAmount, message: 'Vui lòng nhập mã giảm giá' };
+    return applyCoupon(findCoupon(db, code), { plan, months, listAmount });
+  }
 
+  function insertOrder({ ws, user, plan, months, provider, q }) {
     const orderCode = newOrderCode();
     const info = db
-      .prepare('INSERT INTO orders (workspace_id, user_id, plan, months, amount, provider, order_code) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(ws.id, user.id, plan, months, amount, provider, orderCode);
-    const orderId = Number(info.lastInsertRowid);
+      .prepare(
+        `INSERT INTO orders (workspace_id, user_id, plan, months, amount, provider, order_code, coupon_code, discount_vnd, list_amount)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(ws.id, user.id, plan, months, q.amount, provider, orderCode, q.code || null, q.discount, q.listAmount);
+    return { orderId: Number(info.lastInsertRowid), orderCode };
+  }
+
+  async function checkout({ ws, user, plan, months, provider, coupon }) {
+    const q = quote({ plan, months, coupon });
+    if (normalizeCode(coupon) && !q.valid) throw new HttpError(400, q.message);
+    months = Number(months);
+    const { amount } = q;
+
+    // Fully discounted: no gateway involved, the order is paid right away.
+    if (q.valid && amount === 0) {
+      const { orderId } = insertOrder({ ws, user, plan, months, provider: 'coupon', q });
+      fulfill(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId), { ref: q.code });
+      return { orderId, checkoutUrl: `/app/?tab=billing&order=${orderId}`, amount, paid: true };
+    }
+
+    const p = providers[provider];
+    if (!p) throw new HttpError(400, 'Cổng thanh toán chưa được cấu hình');
+    const { orderId, orderCode } = insertOrder({ ws, user, plan, months, provider, q });
     const base = config.appUrl;
     try {
       const result = await p.createPayment({
@@ -132,7 +176,7 @@ function createBilling({ db, config, mailer }) {
       return { orderId, checkoutUrl: result.checkoutUrl, amount };
     } catch (err) {
       db.prepare("UPDATE orders SET status = 'failed' WHERE id = ?").run(orderId);
-      console.error(err);
+      log.error('Payment checkout creation failed', { err, orderId, provider });
       throw new HttpError(502, 'Không tạo được giao dịch thanh toán, vui lòng thử lại');
     }
   }
@@ -147,7 +191,7 @@ function createBilling({ db, config, mailer }) {
     try {
       event = p.verifyWebhook(req.body || {});
     } catch (err) {
-      console.warn(`Webhook ${req.params.provider} bị từ chối: ${err.message}`);
+      log.warn(`Webhook ${req.params.provider} bị từ chối: ${err.message}`);
       return res.status(400).json({ success: false });
     }
     const order = getOrderByCode(p.id, event.orderCode);
@@ -156,7 +200,7 @@ function createBilling({ db, config, mailer }) {
       try {
         fulfill(order, event);
       } catch (err) {
-        console.error(err);
+        log.error('Fulfilling order failed', { err, orderId: order.id });
         db.prepare("UPDATE orders SET status = 'failed' WHERE id = ? AND status = 'pending'").run(order.id);
       }
     }
@@ -183,7 +227,7 @@ function createBilling({ db, config, mailer }) {
         }
       }
     } catch (err) {
-      console.warn(`Không xác nhận được đơn ${order.id}: ${err.message}`);
+      log.warn(`Không xác nhận được đơn ${order.id}: ${err.message}`);
     }
     finish(res, order);
   });
@@ -197,6 +241,7 @@ function createBilling({ db, config, mailer }) {
   return {
     router,
     checkout,
+    quote,
     fulfill,
     providers: () => Object.values(providers).map((p) => ({ id: p.id, name: p.name })),
   };

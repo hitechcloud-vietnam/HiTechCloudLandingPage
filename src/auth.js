@@ -65,7 +65,7 @@ function createSessionStore(db, config) {
         const row = db
           .prepare(
             `SELECT u.id, u.email, u.name, s.expires_at FROM sessions s
-             JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?`
+             JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND u.suspended_at IS NULL`
           )
           .get(sha256(token));
         if (row && new Date(row.expires_at) > new Date()) {

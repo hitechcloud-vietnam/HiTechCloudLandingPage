@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
 const { createSessionStore } = require('./auth');
@@ -12,6 +13,13 @@ const { createAccountRouter } = require('./routes/account');
 const { createNotifier } = require('./notify');
 const { createContentRouter } = require('./routes/content');
 const { createAbRouter } = require('./routes/abtests');
+const { createPublicApiRouter, createApiKeysRouter } = require('./routes/publicApi');
+const { createAnalyticsRouter } = require('./routes/analytics');
+const { logger, requestLogger } = require('./logger');
+const { createMetrics } = require('./metrics');
+const { createErrorReporter } = require('./errors');
+const { createSafetyRouter } = require('./routes/safety');
+const { createStorage } = require('./storage');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -24,11 +32,32 @@ function createApp({ db, config }) {
   const access = createAccess(db);
   const appOrigin = new URL(config.appUrl).origin;
   const uploadsDir = config.uploadsDir || path.join(ROOT, 'data', 'uploads');
+  const storage = config.storage || createStorage({ ...config, uploadsDir });
 
   const mailer = config.mailer || createMailer(config);
   const billing = createBilling({ db, config, mailer });
   const notifier = createNotifier({ db, config, mailer });
   app.locals.mailer = mailer;
+
+  // Observability: request id + access log, Prometheus metrics, error alerts.
+  const log = config.logger || logger;
+  const metrics = createMetrics({ db, config });
+  const errors = config.errorReporter || createErrorReporter({ url: config.errorWebhookUrl, log });
+  app.use(requestLogger({ log }));
+  app.use(metrics.middleware);
+  app.get('/metrics', metrics.handler);
+
+  // Readiness: the database accepts a write lock (no data is written).
+  app.get('/readyz', (_req, res) => {
+    try {
+      db.exec('BEGIN IMMEDIATE');
+      db.exec('ROLLBACK');
+      res.json({ ok: true });
+    } catch (err) {
+      log.warn('Readiness check failed', { err });
+      res.status(503).json({ ok: false });
+    }
+  });
 
   app.get('/healthz', (_req, res) => {
     try {
@@ -73,6 +102,9 @@ function createApp({ db, config }) {
     next();
   });
 
+  // Public REST API v1 (bearer API keys, no cookies), so it bypasses the session CSRF checks.
+  app.use('/api/v1', createPublicApiRouter({ db, config }));
+
   // CSRF protection for the JSON API: reject cross-origin writes and require a
   // JSON body (which a cross-site HTML form cannot produce).
   app.use('/api', (req, res, next) => {
@@ -86,10 +118,14 @@ function createApp({ db, config }) {
     next();
   });
   app.use('/api', express.json({ limit: '5mb' }));
-  app.use('/api', createAccountRouter({ db, config, mailer, sessions }));
-  app.use('/api', createApiRouter({ db, sessions, access, billing, mailer, config, notifier }).router);
-  app.use('/api', createContentRouter({ db, config: { ...config, uploadsDir }, access }));
-  app.use('/api', createAbRouter({ db, access }));
+  app.use('/api', createAccountRouter({ db, config, mailer, sessions, storage }));
+  app.use('/api', createApiRouter({ db, sessions, access, billing, mailer, config, notifier, storage }).router);
+  app.use('/api', createContentRouter({ db, config: { ...config, uploadsDir }, access, storage }));
+  app.use('/api', createAbRouter({ db, access, config, mailer }));
+  app.use('/api', createApiKeysRouter({ db, access }));
+  app.use('/api', createAnalyticsRouter({ db, config, access }));
+  // Abuse report form (/_htc/report, any host) and trust & safety admin API.
+  app.use(createSafetyRouter({ db, config, mailer }));
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Không tìm thấy' }));
 
   // Editor vendor assets (GrapesJS + plugins BSD-3-Clause, Font Awesome OFL/MIT).
@@ -109,12 +145,26 @@ function createApp({ db, config }) {
     res.sendFile(file, { maxAge: '7d' });
   });
 
+  app.use(metrics.unmatched);
   app.use(express.static(path.join(ROOT, 'public'), { extensions: ['html'] }));
 
-  app.use((err, _req, res, _next) => {
+  // Branded 404 for browsers (read once at startup); plain text for everything else.
+  const notFoundHtml = fs.readFileSync(path.join(ROOT, 'public', '404.html'), 'utf8');
+  app.use((req, res) => {
+    res.status(404);
+    if ((req.method === 'GET' || req.method === 'HEAD') && req.accepts('html')) {
+      return res.type('html').send(notFoundHtml);
+    }
+    res.type('text/plain').send('Không tìm thấy');
+  });
+
+  app.use((err, req, res, _next) => {
     const status = err.status || err.statusCode || 500;
-    if (status >= 500) console.error(err);
-    res.status(status).json({ error: status >= 500 ? 'Lỗi máy chủ' : err.message });
+    if (status >= 500) {
+      (req.log || log).error('Request failed', { err, method: req.method, route: req.routePattern, host: req.hostname });
+      errors.report(err, { kind: 'http_5xx', requestId: req.id, method: req.method, route: req.routePattern, host: req.hostname });
+    }
+    res.status(status).json(status >= 500 ? { error: 'Lỗi máy chủ', requestId: req.id } : { error: err.message });
   });
 
   return app;

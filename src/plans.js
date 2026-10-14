@@ -15,6 +15,7 @@ const PLANS = {
     removeBranding: false,
     customCode: false,
     abTesting: false,
+    apiAccess: false,
   },
   pro: {
     id: 'pro',
@@ -29,6 +30,7 @@ const PLANS = {
     removeBranding: true,
     customCode: true,
     abTesting: true,
+    apiAccess: true,
   },
   business: {
     id: 'business',
@@ -43,6 +45,7 @@ const PLANS = {
     removeBranding: true,
     customCode: true,
     abTesting: true,
+    apiAccess: true,
   },
 };
 

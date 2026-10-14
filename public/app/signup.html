@@ -23,6 +23,10 @@
       <label for="password">Mật khẩu</label>
       <input id="password" name="password" type="password" minlength="8" autocomplete="new-password" required>
       <div class="hint">Tối thiểu 8 ký tự.</div>
+      <label class="consent" for="agree">
+        <input id="agree" name="acceptTerms" value="1" type="checkbox" required>
+        <span>Tôi đồng ý với <a href="/terms" target="_blank" rel="noopener">Điều khoản sử dụng</a> và <a href="/privacy" target="_blank" rel="noopener">Chính sách bảo mật</a></span>
+      </label>
       <button class="btn" style="width:100%;margin-top:20px" type="submit">Đăng ký</button>
     </form>
     <p class="muted">Đã có tài khoản? <a href="/app/login">Đăng nhập</a></p>

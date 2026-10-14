@@ -38,6 +38,13 @@
   </div>
 
   <div class="alert" id="error"></div>
+  <div class="alert alert-info" id="verify-notice"></div>
+  <div class="alert" id="verify-banner" style="background:#fef3c7;color:#92400e" hidden>
+    <div class="row">
+      <span id="verify-text">Vui lòng xác minh email <strong id="verify-email"></strong> để xuất bản trang và nâng cấp gói dịch vụ. Hãy kiểm tra hộp thư của bạn.</span>
+      <button class="btn btn-ghost btn-sm" id="verify-resend" type="button">Gửi lại email xác minh</button>
+    </div>
+  </div>
 
   <section data-panel="sites"><div class="grid" id="sites"></div></section>
 
@@ -69,6 +76,13 @@
             <select id="provider"></select></label>
         </div>
       </div>
+      <form class="card row" id="coupon-form" style="justify-content:flex-start" hidden>
+        <label class="inline">Mã giảm giá
+          <input id="coupon" maxlength="32" autocomplete="off" placeholder="VD: TET2027" style="text-transform:uppercase;width:12em"></label>
+        <button class="btn btn-ghost btn-sm" type="submit">Áp dụng</button>
+        <button class="btn btn-ghost btn-sm" type="button" id="coupon-clear" hidden>Bỏ mã</button>
+        <span class="muted" id="coupon-msg" role="status"></span>
+      </form>
       <div class="grid" id="plans"></div>
       <div class="card">
         <h3 style="margin-top:0">Lịch sử thanh toán</h3>
@@ -90,14 +104,54 @@
       <form id="password-form">
         <label>Đổi mật khẩu</label>
         <div class="row">
-          <input name="currentPassword" type="password" placeholder="Mật khẩu hiện tại" autocomplete="current-password" style="flex:1 1 200px" required>
-          <input name="newPassword" type="password" placeholder="Mật khẩu mới (≥ 8 ký tự)" minlength="8" autocomplete="new-password" style="flex:1 1 200px" required>
+          <input name="currentPassword" type="password" placeholder="Mật khẩu hiện tại" aria-label="Mật khẩu hiện tại" autocomplete="current-password" style="flex:1 1 200px" required>
+          <input name="newPassword" type="password" placeholder="Mật khẩu mới (≥ 8 ký tự)" aria-label="Mật khẩu mới" minlength="8" autocomplete="new-password" style="flex:1 1 200px" required>
           <button class="btn btn-ghost" type="submit">Đổi mật khẩu</button>
         </div>
       </form>
       <form id="ws-new-form">
         <label for="ws-new">Tạo workspace mới (cho khách hàng/dự án khác)</label>
         <div class="row"><input id="ws-new" name="name" style="flex:1" required><button class="btn btn-ghost" type="submit">Tạo</button></div>
+      </form>
+    </div>
+    <div class="card stack" id="api-keys-card" style="margin-top:16px" hidden>
+      <div>
+        <h3 style="margin:0">API keys</h3>
+        <span class="muted">Kết nối Zapier, Make, CRM… với API công khai <code>/api/v1</code> bằng header <code>Authorization: Bearer &lt;API key&gt;</code>.</span>
+      </div>
+      <div class="alert alert-info" id="api-plan-note"></div>
+      <form id="api-key-form" class="row">
+        <input id="api-key-name" name="name" placeholder="Tên key, ví dụ: Zapier" maxlength="100" style="flex:1" required aria-label="Tên API key">
+        <button class="btn" type="submit">Tạo API key</button>
+      </form>
+      <div class="alert alert-info" id="api-key-created" hidden>
+        <strong>API key mới (chỉ hiển thị một lần):</strong>
+        <input id="api-key-value" readonly style="width:100%;margin:6px 0;font-family:monospace">
+        <span class="hint">Hãy sao chép và lưu ở nơi an toàn. Sau khi đóng, bạn sẽ không xem lại được key này.</span>
+        <div class="row" style="justify-content:flex-start;margin-top:6px">
+          <button class="btn btn-sm" type="button" id="api-key-copy">Sao chép</button>
+          <button class="btn btn-ghost btn-sm" type="button" id="api-key-close">Đã lưu, đóng</button>
+        </div>
+      </div>
+      <div class="table-wrap"><table><thead><tr><th>Tên</th><th>Key</th><th>Tạo bởi</th><th>Dùng lần cuối</th><th>Trạng thái</th><th></th></tr></thead><tbody id="api-keys"></tbody></table></div>
+    </div>
+    <div class="card stack" style="margin-top:16px">
+      <div>
+        <h3 style="margin:0">Quyền dữ liệu cá nhân</h3>
+        <p class="muted" style="margin:4px 0 0">Theo Nghị định 13/2023/NĐ-CP, bạn có quyền nhận bản sao và yêu cầu xóa dữ liệu cá nhân của mình.</p>
+      </div>
+      <div>
+        <a class="btn btn-ghost" href="/api/auth/export" download>Tải dữ liệu của tôi</a>
+        <div class="hint">Tệp JSON gồm hồ sơ, các workspace bạn tham gia và toàn bộ website, trang, lead, đơn hàng của workspace bạn sở hữu.</div>
+      </div>
+      <form id="delete-account-form">
+        <label>Xóa tài khoản</label>
+        <div class="hint">Xóa vĩnh viễn tài khoản và các workspace bạn sở hữu (website, trang, lead, lịch sử thanh toán). Không thể hoàn tác. Nếu workspace của bạn còn thành viên khác, hãy chuyển quyền sở hữu hoặc xóa thành viên trong tab Thành viên trước.</div>
+        <div class="row" style="margin-top:8px">
+          <input name="password" type="password" placeholder="Mật khẩu hiện tại" aria-label="Mật khẩu hiện tại để xóa tài khoản" autocomplete="current-password" style="flex:1 1 200px" required>
+          <input name="confirm" placeholder="Nhập XOA TAI KHOAN để xác nhận" aria-label="Nhập XOA TAI KHOAN để xác nhận" autocomplete="off" style="flex:1 1 200px" required>
+          <button class="btn btn-danger" type="submit">Xóa tài khoản</button>
+        </div>
       </form>
     </div>
   </section>
@@ -127,6 +181,8 @@ const { api, esc, $, formData, slugify, formatVnd, limit } = HTC;
 const ROLE_LABEL = { owner: 'Chủ sở hữu', admin: 'Quản trị viên', editor: 'Biên tập viên' };
 const ORDER_STATUS = { pending: ['Chờ thanh toán', ''], paid: ['Đã thanh toán', 'badge-success'], cancelled: ['Đã hủy', ''], failed: ['Lỗi', 'badge-danger'] };
 let me, ws, plans = [], providers = [];
+// Applied coupon: code plus a preview per paid plan for the selected cycle.
+let coupon = { code: '', quotes: {} };
 const params = new URLSearchParams(location.search);
 
 function selectTab(name) {
@@ -141,6 +197,8 @@ async function load() {
   $('#user-name').textContent = me.user.name;
   $('#admin-link').hidden = !me.user.isSuperAdmin;
   $('#profile-name').value = me.user.name;
+  $('#verify-banner').hidden = me.user.emailVerified;
+  $('#verify-email').textContent = me.user.email;
   const current = HTC.currentWorkspace(me.workspaces);
   $('#ws-select').innerHTML = me.workspaces
     .map((w) => `<option value="${w.id}" ${w.id === current.id ? 'selected' : ''}>${esc(w.name)}</option>`)
@@ -160,7 +218,24 @@ async function loadWorkspace(id) {
     ['Thành viên', ws.usage.members, p.maxMembers],
     ['Lead tháng này', ws.usage.leadsThisMonth, p.maxLeadsPerMonth],
   ].map(([label, used, max]) => `<div class="card"><span class="muted">${label}</span><strong>${used} / ${limit(max)}</strong></div>`).join('');
-  await Promise.all([loadSites(), loadMembers(), loadPlans(), loadOrders()]);
+  await Promise.all([loadSites(), loadMembers(), loadPlans(), loadOrders(), loadApiKeys()]);
+}
+
+async function loadApiKeys() {
+  const canManage = ws.role === 'owner' || ws.role === 'admin';
+  $('#api-keys-card').hidden = !canManage;
+  if (!canManage) return;
+  const allowed = !!ws.planDetails.apiAccess;
+  $('#api-plan-note').textContent = allowed ? '' : 'API chỉ có ở gói Pro trở lên. Nâng cấp gói để tạo API key.';
+  $('#api-key-form').hidden = !allowed;
+  const keys = await api(`/workspaces/${ws.id}/api-keys`);
+  const time = (t) => (t ? new Date(t.replace(' ', 'T') + 'Z').toLocaleString('vi-VN') : 'Chưa dùng');
+  $('#api-keys').innerHTML = keys.length
+    ? keys.map((k) => `
+      <tr><td>${esc(k.name)}</td><td><code>${esc(k.prefix)}…</code></td><td>${esc(k.createdBy || '')}</td><td>${time(k.lastUsedAt)}</td>
+      <td>${k.revokedAt ? '<span class="badge badge-danger">Đã thu hồi</span>' : '<span class="badge badge-success">Đang hoạt động</span>'}</td>
+      <td>${k.revokedAt ? '' : `<button class="btn btn-ghost btn-sm" data-revoke-key="${k.id}">Thu hồi</button>`}</td></tr>`).join('')
+    : '<tr><td colspan="6" class="muted">Chưa có API key nào.</td></tr>';
 }
 
 async function loadSites() {
@@ -183,7 +258,7 @@ async function loadMembers() {
   $('#member-form').hidden = !canManage;
   $('#members').innerHTML = members.map((m) => `
     <tr><td>${esc(m.name)}</td><td>${esc(m.email)}</td><td>${ROLE_LABEL[m.role]}</td>
-    <td>${canManage && m.role !== 'owner' ? `<button class="btn btn-ghost btn-sm" data-remove="${m.id}">Xóa</button>` : ''}</td></tr>`).join('');
+    <td>${ws.role === 'owner' && m.role !== 'owner' ? `<button class="btn btn-ghost btn-sm" data-transfer="${m.id}" data-name="${esc(m.name)}">Chuyển quyền sở hữu</button> ` : ''}${canManage && m.role !== 'owner' ? `<button class="btn btn-ghost btn-sm" data-remove="${m.id}">Xóa</button>` : ''}</td></tr>`).join('');
   $('#invites-wrap').hidden = !invites.length;
   $('#invites').innerHTML = invites.map((i) => `
     <tr><td>${esc(i.email)}</td><td>${ROLE_LABEL[i.role]}</td><td>${new Date(i.expires_at).toLocaleDateString('vi-VN')}</td>
@@ -199,6 +274,35 @@ async function loadPlans() {
     : ws.plan !== ws.effectivePlan ? 'Gói trả phí đã hết hạn' : '';
   $('#provider').innerHTML = providers.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
   $('#pay-options').hidden = !providers.length || !canPay;
+  $('#coupon-form').hidden = !canPay;
+  if (!canPay) coupon = { code: '', quotes: {} };
+  await previewCoupon();
+}
+
+// Prices every paid plan with the applied coupon for the selected cycle.
+async function previewCoupon() {
+  const months = Number($('#cycle').value);
+  coupon.quotes = {};
+  if (coupon.code) {
+    const paid = plans.filter((p) => p.priceVnd > 0);
+    try {
+      const results = await Promise.all(paid.map((p) =>
+        api(`/workspaces/${ws.id}/coupon/preview`, { method: 'POST', body: { coupon: coupon.code, plan: p.id, months } })));
+      paid.forEach((p, i) => { coupon.quotes[p.id] = results[i]; });
+      const okPlans = paid.filter((p) => coupon.quotes[p.id].valid);
+      $('#coupon-msg').textContent = okPlans.length
+        ? `${coupon.quotes[okPlans[0].id].message}${okPlans.length < paid.length ? ` (gói ${okPlans.map((p) => p.name).join(', ')})` : ''}`
+        : results[0].message;
+      $('#coupon-msg').className = okPlans.length ? 'badge badge-success' : 'badge badge-danger';
+    } catch (err) {
+      $('#coupon-msg').textContent = err.message;
+      $('#coupon-msg').className = 'badge badge-danger';
+    }
+  } else {
+    $('#coupon-msg').textContent = '';
+    $('#coupon-msg').className = 'muted';
+  }
+  $('#coupon-clear').hidden = !coupon.code;
   renderPlans();
 }
 
@@ -208,10 +312,15 @@ function renderPlans() {
   $('#plans').innerHTML = plans.map((p) => {
     const current = p.id === ws.effectivePlan;
     const total = p.priceVnd * (months === 12 ? 10 : 1);
+    const q = coupon.quotes[p.id];
+    const price = q && q.valid
+      ? `<s style="opacity:.7">${total.toLocaleString('vi-VN')}đ</s> ${q.amount.toLocaleString('vi-VN')}đ`
+      : `${total.toLocaleString('vi-VN')}đ`;
     let action = '';
     if (p.priceVnd > 0) {
-      action = canPay
-        ? `<button class="btn btn-sm" data-buy="${p.id}">${current ? 'Gia hạn' : 'Nâng cấp'} · ${total.toLocaleString('vi-VN')}đ</button>`
+      // A fully discounted order needs no payment gateway.
+      action = canPay || (q && q.valid && q.amount === 0 && (ws.role === 'owner' || ws.role === 'admin'))
+        ? `<button class="btn btn-sm" data-buy="${p.id}">${current ? 'Gia hạn' : 'Nâng cấp'} · ${price}</button>`
         : '<a class="btn btn-ghost btn-sm" href="mailto:sales@hitechcloud.vn">Liên hệ nâng cấp</a>';
     }
     if (me.user.isSuperAdmin && !current) action += ` <button class="btn btn-ghost btn-sm" data-plan="${p.id}">Cấp gói (admin)</button>`;
@@ -226,6 +335,7 @@ function renderPlans() {
         <li>${limit(p.maxLeadsPerMonth)} lead / tháng</li>
         <li>${p.customDomain ? 'Tên miền riêng' : 'Chỉ tên miền phụ'}</li>
         <li>${p.removeBranding ? 'Không gắn thương hiệu HiTechCloud' : 'Có gắn nhãn HiTechCloud'}</li>
+        <li>${p.apiAccess ? 'API công khai & API key' : 'Không có API'}</li>
       </ul>
       <div class="row" style="justify-content:flex-start">${action}</div>
     </div>`;
@@ -238,8 +348,11 @@ async function loadOrders() {
   $('#orders').innerHTML = orders.length
     ? orders.map((o) => {
       const [label, cls] = ORDER_STATUS[o.status];
-      return `<tr><td>#${o.id}</td><td>${esc(planName(o.plan))} · ${o.months} tháng</td><td>${o.amount.toLocaleString('vi-VN')}đ</td>
-        <td>${esc(o.provider)}</td><td><span class="badge ${cls}">${label}</span>
+      const discount = o.discount_vnd > 0
+        ? `<div class="hint">Giá gốc ${(o.list_amount || o.amount + o.discount_vnd).toLocaleString('vi-VN')}đ · giảm ${o.discount_vnd.toLocaleString('vi-VN')}đ (${esc(o.coupon_code)})</div>`
+        : '';
+      return `<tr><td>#${o.id}</td><td>${esc(planName(o.plan))} · ${o.months} tháng</td><td>${o.amount.toLocaleString('vi-VN')}đ${discount}</td>
+        <td>${o.provider === 'coupon' ? 'Mã giảm giá' : esc(o.provider)}</td><td><span class="badge ${cls}">${label}</span>
         ${o.checkout_url ? ` <a href="${esc(o.checkout_url)}">Tiếp tục thanh toán</a>` : ''}</td>
         <td>${esc(o.paid_at || o.created_at)}</td></tr>`;
     }).join('')
@@ -263,7 +376,18 @@ $('#ws-select').onchange = (e) => loadWorkspace(Number(e.target.value)).catch(sh
 
 document.querySelectorAll('.tabs button').forEach((btn) => { btn.onclick = () => selectTab(btn.dataset.tab); });
 if (params.get('tab')) selectTab(params.get('tab'));
-$('#cycle').onchange = renderPlans;
+$('#cycle').onchange = () => previewCoupon().catch(showError);
+$('#coupon-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  coupon.code = $('#coupon').value.trim().toUpperCase();
+  try { await previewCoupon(); } catch (err) { showError(err); }
+};
+$('#coupon-clear').onclick = () => {
+  coupon.code = '';
+  $('#coupon').value = '';
+  previewCoupon().catch(showError);
+};
 
 $('#member-form').onsubmit = async (e) => {
   e.preventDefault();
@@ -277,20 +401,30 @@ $('#member-form').onsubmit = async (e) => {
 };
 
 $('#members').onclick = async (e) => {
+  const { transfer, name } = e.target.dataset;
+  if (transfer) {
+    if (!confirm(`Chuyển quyền sở hữu workspace "${ws.name}" cho ${name}? Bạn sẽ trở thành quản trị viên.`)) return;
+    showError();
+    try { await api(`/workspaces/${ws.id}/transfer`, { method: 'POST', body: { userId: Number(transfer) } }); await load(); } catch (err) { showError(err); }
+    return;
+  }
   const id = e.target.dataset.remove;
   if (!id || !confirm('Xóa thành viên này khỏi workspace?')) return;
   try { await api(`/workspaces/${ws.id}/members/${id}`, { method: 'DELETE' }); await loadWorkspace(ws.id); } catch (err) { showError(err); }
 };
 
 $('#plans').onclick = async (e) => {
-  const { plan, buy } = e.target.dataset;
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const { plan, buy } = btn.dataset;
   showError();
   try {
     if (buy) {
-      e.target.disabled = true;
+      btn.disabled = true;
+      const q = coupon.quotes[buy];
       const res = await api(`/workspaces/${ws.id}/checkout`, {
         method: 'POST',
-        body: { plan: buy, months: Number($('#cycle').value), provider: $('#provider').value },
+        body: { plan: buy, months: Number($('#cycle').value), provider: $('#provider').value, ...(q && q.valid ? { coupon: coupon.code } : {}) },
       });
       location.href = res.checkoutUrl;
     } else if (plan) {
@@ -299,13 +433,45 @@ $('#plans').onclick = async (e) => {
       await api(`/workspaces/${ws.id}/plan`, { method: 'POST', body: { plan, months } });
       await loadWorkspace(ws.id);
     }
-  } catch (err) { showError(err); e.target.disabled = false; }
+  } catch (err) { showError(err); btn.disabled = false; }
 };
 
 $('#invites').onclick = async (e) => {
   const id = e.target.dataset.revoke;
   if (!id) return;
   try { await api(`/workspaces/${ws.id}/invitations/${id}`, { method: 'DELETE' }); await loadMembers(); } catch (err) { showError(err); }
+};
+
+$('#api-key-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  try {
+    const created = await api(`/workspaces/${ws.id}/api-keys`, { method: 'POST', body: formData(e.target) });
+    e.target.reset();
+    $('#api-key-value').value = created.key;
+    $('#api-key-created').hidden = false;
+    $('#api-key-value').select();
+    await loadApiKeys();
+  } catch (err) { showError(err); }
+};
+
+$('#api-key-copy').onclick = async () => {
+  const input = $('#api-key-value');
+  input.select();
+  try { await navigator.clipboard.writeText(input.value); } catch { document.execCommand('copy'); }
+  $('#api-key-copy').textContent = 'Đã sao chép';
+};
+
+$('#api-key-close').onclick = () => {
+  $('#api-key-value').value = '';
+  $('#api-key-created').hidden = true;
+  $('#api-key-copy').textContent = 'Sao chép';
+};
+
+$('#api-keys').onclick = async (e) => {
+  const id = e.target.dataset.revokeKey;
+  if (!id || !confirm('Thu hồi API key này? Các tích hợp đang dùng key sẽ ngừng hoạt động ngay.')) return;
+  try { await api(`/api-keys/${id}`, { method: 'DELETE' }); await loadApiKeys(); } catch (err) { showError(err); }
 };
 
 $('#profile-form').onsubmit = async (e) => {
@@ -323,6 +489,35 @@ $('#ws-form').onsubmit = async (e) => {
   e.preventDefault();
   try { await api(`/workspaces/${ws.id}`, { method: 'PATCH', body: formData(e.target) }); await load(); } catch (err) { showError(err); }
 };
+
+$('#verify-resend').onclick = async (e) => {
+  e.target.disabled = true;
+  try {
+    await api('/auth/resend-verification', { method: 'POST', body: {} });
+    $('#verify-text').textContent = `Đã gửi lại email xác minh tới ${me.user.email}. Liên kết có hiệu lực trong 24 giờ.`;
+  } catch (err) { showError(err); e.target.disabled = false; }
+};
+
+$('#delete-account-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  if (!confirm('Xóa vĩnh viễn tài khoản và toàn bộ dữ liệu của các workspace bạn sở hữu? Thao tác này không thể hoàn tác.')) return;
+  try {
+    await api('/auth/delete-account', { method: 'POST', body: formData(e.target) });
+    alert('Tài khoản của bạn đã được xóa.');
+    location.href = '/';
+  } catch (err) { showError(err); }
+};
+
+// Result of clicking the verification link (/api/auth/verify redirects here).
+function showVerifyResult() {
+  const v = params.get('verified');
+  if (v === null) return;
+  if (v === '1' || me.user.emailVerified) $('#verify-notice').textContent = 'Đã xác minh email. Bạn có thể xuất bản trang và nâng cấp gói dịch vụ.';
+  else showError(new Error('Liên kết xác minh không hợp lệ hoặc đã hết hạn. Hãy bấm "Gửi lại email xác minh".'));
+  params.delete('verified');
+  history.replaceState(null, '', location.pathname + (params.size ? `?${params}` : ''));
+}
 
 $('#ws-new-form').onsubmit = async (e) => {
   e.preventDefault();
@@ -357,7 +552,7 @@ $('#site-form').onsubmit = async (e) => {
   } catch (err) { $('#site-error').textContent = err.message; }
 };
 
-load().catch(showError);
+load().then(showVerifyResult).catch(showError);
 </script>
 </body>
 </html>

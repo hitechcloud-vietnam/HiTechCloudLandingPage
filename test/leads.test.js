@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { startServer, client } = require('./helpers');
+const { startServer, client, verifyEmail } = require('./helpers');
 
 test('lead management: attribution, status, notes, filters', async (t) => {
   const { server, base, db } = await startServer();
@@ -10,6 +10,7 @@ test('lead management: attribution, status, notes, filters', async (t) => {
 
   const c = client(base);
   await c('POST', '/api/auth/signup', { name: 'Chủ', email: 'owner@example.com', password: 'matkhau123' });
+  verifyEmail(db, 'owner@example.com');
   const wsId = (await c('GET', '/api/auth/me')).data.workspaces[0].id;
   db.prepare("UPDATE workspaces SET plan = 'pro' WHERE id = ?").run(wsId);
   const site = (await c('POST', `/api/workspaces/${wsId}/sites`, { name: 'Shop', subdomain: 'shop', template: 'leadgen' })).data;
@@ -28,13 +29,13 @@ test('lead management: attribution, status, notes, filters', async (t) => {
   });
 
   await t.test('UTM fields are stored as source, not form data', async () => {
-    await submit({ name: 'Nguyễn An', phone: '0901', _utm_source: 'facebook', _utm_campaign: 'tet2027', _ref: 'https://m.facebook.com/', _evil: 'x' });
-    await submit({ name: 'Trần Bình', phone: '0902', _utm_source: 'google' });
-    await submit({ name: 'Lê 100%_off', phone: '0903' });
+    await submit({ name: 'Nguyễn An', phone: '0901000001', _utm_source: 'facebook', _utm_campaign: 'tet2027', _ref: 'https://m.facebook.com/', _evil: 'x' });
+    await submit({ name: 'Trần Bình', phone: '0902000002', _utm_source: 'google' });
+    await submit({ name: 'Lê 100%_off', phone: '0903000003' });
     const leads = (await c('GET', `/api/sites/${site.id}/leads`)).data;
     assert.equal(leads.length, 3);
     const an = leads.find((l) => l.data.name === 'Nguyễn An');
-    assert.deepEqual(an.data, { name: 'Nguyễn An', phone: '0901' });
+    assert.deepEqual(an.data, { name: 'Nguyễn An', phone: '0901000001' });
     assert.deepEqual(an.source, { utm_source: 'facebook', utm_campaign: 'tet2027', ref: 'https://m.facebook.com/' });
     assert.equal(an.status, 'new');
     const row = db.prepare('SELECT page_id FROM leads WHERE id = ?').get(an.id);
@@ -56,7 +57,7 @@ test('lead management: attribution, status, notes, filters', async (t) => {
     assert.deepEqual(await get('status=won'), ['Nguyễn An']);
     assert.deepEqual(await get('status=new'), ['Lê 100%_off', 'Trần Bình']);
     assert.deepEqual(await get(`q=${encodeURIComponent('chốt đơn')}`), ['Nguyễn An']);
-    assert.deepEqual(await get('q=0902'), ['Trần Bình']);
+    assert.deepEqual(await get('q=0902000002'), ['Trần Bình']);
     assert.deepEqual(await get(`q=${encodeURIComponent('%_')}`), ['Lê 100%_off']);
     const today = new Date().toISOString().slice(0, 10);
     assert.equal((await get(`from=${today}&to=${today}`)).length, 3);

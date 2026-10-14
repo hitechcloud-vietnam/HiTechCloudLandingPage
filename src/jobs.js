@@ -1,6 +1,7 @@
 'use strict';
 
 const { PLANS } = require('./plans');
+const { logger } = require('./logger');
 
 const REMINDER_DAYS = [7, 1];
 
@@ -43,6 +44,7 @@ function purgeExpired(db) {
   const now = new Date().toISOString();
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
   db.prepare('DELETE FROM password_resets WHERE expires_at < ?').run(now);
+  db.prepare('DELETE FROM email_verifications WHERE expires_at < ?').run(now);
   db.prepare("UPDATE orders SET status = 'cancelled' WHERE status = 'pending' AND created_at < datetime('now', '-1 day')").run();
 }
 
@@ -52,7 +54,7 @@ function startJobs({ db, mailer, config }) {
       purgeExpired(db);
       sendExpiryReminders({ db, mailer, config });
     } catch (err) {
-      console.error('[jobs]', err);
+      logger.error('[jobs] background job failed', { component: 'jobs', err });
     }
   };
   run();

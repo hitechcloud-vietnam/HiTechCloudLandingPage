@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { startServer, client, getWithHost } = require('./helpers');
+const { startServer, client, getWithHost, verifyEmail } = require('./helpers');
 const { isPrivateAddress, assertPublicUrl, guardedLookup, httpsPostJson } = require('../src/notify');
 
 test('site integrations: tracking, SEO files, lead notifications', async (t) => {
@@ -17,6 +17,7 @@ test('site integrations: tracking, SEO files, lead notifications', async (t) => 
 
   const c = client(base);
   await c('POST', '/api/auth/signup', { name: 'Chủ', email: 'owner@example.com', password: 'matkhau123' });
+  verifyEmail(db, 'owner@example.com');
   const wsId = (await c('GET', '/api/auth/me')).data.workspaces[0].id;
   const site = (await c('POST', `/api/workspaces/${wsId}/sites`, { name: 'Shop', subdomain: 'shop', template: 'leadgen' })).data;
   const pages = (await c('GET', `/api/sites/${site.id}/pages`)).data;
@@ -89,19 +90,19 @@ test('site integrations: tracking, SEO files, lead notifications', async (t) => 
     calls.length = 0;
     const before = outbox.length;
     const res = await fetch(`${base}/_htc/lead?site=${site.id}&page=index`, {
-      method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'name=An&phone=0909',
+      method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'name=An&phone=0909123456',
     });
     assert.equal(res.status, 303);
     await new Promise((r) => setTimeout(r, 50));
 
     const mails = outbox.slice(before).map((m) => m.to).sort();
     assert.deepEqual(mails, ['ops@example.com', 'owner@example.com', 'sales@example.com']);
-    assert.match(outbox.at(-1).text, /phone: 0909/);
+    assert.match(outbox.at(-1).text, /phone: 0909123456/);
 
     const hook = calls.find((x) => x.url === 'https://hooks.example.com/lead');
     const payload = JSON.parse(hook.opts.body);
     assert.equal(payload.event, 'lead.created');
-    assert.deepEqual(payload.data, { name: 'An', phone: '0909' });
+    assert.deepEqual(payload.data, { name: 'An', phone: '0909123456' });
     const secret = (await c('GET', `/api/sites/${site.id}`)).data.settings.webhookSecret;
     const expected = crypto.createHmac('sha256', secret).update(hook.opts.body).digest('hex');
     assert.equal(hook.opts.headers['X-HTC-Signature'], `sha256=${expected}`);

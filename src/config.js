@@ -19,12 +19,36 @@ const config = {
   cnameTarget: (process.env.CNAME_TARGET || '').toLowerCase(),
   dbFile: process.env.DB_FILE || path.join(__dirname, '..', 'data', 'hitechcloud.db'),
   uploadsDir: process.env.UPLOADS_DIR || path.join(__dirname, '..', 'data', 'uploads'),
+  // S3-compatible object storage for uploaded images; local disk when S3_BUCKET is empty.
+  s3: {
+    bucket: process.env.S3_BUCKET || '',
+    endpoint: process.env.S3_ENDPOINT || '',
+    region: process.env.S3_REGION || 'us-east-1',
+    accessKeyId: process.env.S3_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
+    publicUrl: process.env.S3_PUBLIC_URL || '',
+    forcePathStyle: ['1', 'true', 'yes'].includes(String(process.env.S3_FORCE_PATH_STYLE || '').toLowerCase()),
+  },
   superAdmins: list(process.env.SUPERADMIN_EMAILS),
+  // Auto-suspend sites whose published page looks like bank phishing (0 = flag for review only).
+  safetyAutoSuspend: !['0', 'false', 'no', 'off'].includes(String(process.env.SAFETY_AUTO_SUSPEND ?? '1').trim().toLowerCase()),
+  // Signup must tick "Tôi đồng ý…"; the accepted terms version is stored as proof of consent (Decree 13/2023).
+  requireTermsConsent: !['0', 'false', 'no', 'off'].includes(String(process.env.REQUIRE_TERMS_CONSENT ?? '1').trim().toLowerCase()),
+  termsVersion: process.env.TERMS_VERSION || '1',
   sessionDays: Number(process.env.SESSION_DAYS || 30),
   secureCookies: process.env.NODE_ENV === 'production',
   // smtp(s)://user:pass@host:port — leave empty to log emails to stdout.
   smtpUrl: process.env.SMTP_URL || '',
   mailFrom: process.env.MAIL_FROM || 'HiTechCloud <no-reply@hitechcloud.vn>',
+  // Observability. Logs are silent under the test runner unless LOG_LEVEL is set.
+  logLevel: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'test' || process.env.NODE_TEST_CONTEXT ? 'silent' : 'info'),
+  logFormat: process.env.LOG_FORMAT || (process.env.NODE_ENV === 'production' ? 'json' : 'pretty'),
+  // Bearer token for GET /metrics on the APP_URL host; unset = endpoint disabled (404).
+  metricsToken: process.env.METRICS_TOKEN || '',
+  // Slack/Discord-compatible incoming webhook for 5xx / crash alerts.
+  errorWebhookUrl: process.env.ERROR_WEBHOOK_URL || '',
+  // HMAC key for the anti-bot timestamp in published forms (see leadGuard.js).
+  leadSecret: process.env.LEAD_SECRET || '',
   payments: {
     payos: {
       clientId: process.env.PAYOS_CLIENT_ID,

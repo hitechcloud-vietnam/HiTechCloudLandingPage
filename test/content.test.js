@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { startServer, client } = require('./helpers');
+const { startServer, client, verifyEmail } = require('./helpers');
 
 // Smallest valid PNG (1x1 transparent).
 const PNG = Buffer.from(
@@ -16,6 +16,7 @@ test('assets, versions and duplication', async (t) => {
 
   const c = client(base);
   await c('POST', '/api/auth/signup', { name: 'Chủ', email: 'owner@example.com', password: 'matkhau123' });
+  verifyEmail(db, 'owner@example.com');
   const wsId = (await c('GET', '/api/auth/me')).data.workspaces[0].id;
   const site = (await c('POST', `/api/workspaces/${wsId}/sites`, { name: 'Shop', subdomain: 'shop', template: 'blank' })).data;
   const page = (await c('GET', `/api/sites/${site.id}/pages`)).data[0];
@@ -112,4 +113,31 @@ test('assets, versions and duplication', async (t) => {
     assert.equal((await c('PATCH', `/api/pages/${d3.id}`, { slug: d3.slug })).status, 200);
   });
 
+});
+
+test('deleting a workspace or an account removes its uploaded files', async (t) => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { server, base, db, config } = await startServer();
+  t.after(() => server.close());
+  const c = client(base);
+  await c('POST', '/api/auth/signup', { name: 'Chủ', email: 'xoa@example.com', password: 'matkhau123' });
+  const firstWs = (await c('GET', '/api/auth/me')).data.workspaces[0].id;
+  const secondWs = (await c('POST', '/api/workspaces', { name: 'Thứ hai' })).data.id;
+  const upload = async (wsId) => {
+    const r = await c('POST', `/api/workspaces/${wsId}/assets`, PNG, { raw: true, headers: { 'Content-Type': 'image/png' } });
+    assert.equal(r.status, 201);
+    return path.join(config.uploadsDir, decodeURIComponent(r.data.src.replace(/^\/uploads\//, '')));
+  };
+  const a = await upload(firstWs);
+  const b = await upload(secondWs);
+  assert.ok(fs.existsSync(a) && fs.existsSync(b));
+
+  assert.equal((await c('DELETE', `/api/workspaces/${secondWs}`)).status, 200);
+  assert.equal(fs.existsSync(b), false);
+  assert.ok(fs.existsSync(a));
+
+  assert.equal((await c('POST', '/api/auth/delete-account', { password: 'matkhau123', confirm: 'XOA TAI KHOAN' })).status, 200);
+  assert.equal(fs.existsSync(a), false);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM assets').get().n, 0);
 });

@@ -1,0 +1,11 @@
+# HiTechCloud LandingPage – marketing site.
+# Placeholder domain: replace https://hitechcloud.vn with the production domain.
+# Customer sites (custom domains / <subdomain>.<PUBLISH_ROOT_DOMAIN>) serve their own robots.txt.
+User-agent: *
+Allow: /
+Disallow: /app/
+Disallow: /api/
+Disallow: /editor
+Disallow: /preview/
+
+Sitemap: https://hitechcloud.vn/sitemap.xml

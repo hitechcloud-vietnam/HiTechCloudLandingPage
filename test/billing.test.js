@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { openDb } = require('../src/db');
 const { createApp } = require('../src/app');
+const { verifyEmail } = require('./helpers');
 const payosLib = require('../src/payments/payos');
 const pay2sLib = require('../src/payments/pay2s');
 
@@ -90,7 +91,7 @@ test('billing with payOS and Pay2S', async (t) => {
   const gw = createGatewayMock();
   const db = openDb(':memory:');
   const config = {
-    appUrl: APP_URL, publishRootDomain: '', superAdmins: ['root@hitechcloud.vn'], sessionDays: 1, secureCookies: false, quietMail: true,
+    appUrl: APP_URL, publishRootDomain: '', superAdmins: ['root@hitechcloud.vn'], sessionDays: 1, secureCookies: false, quietMail: true, requireTermsConsent: false,
     payments: { payos: PAYOS, pay2s: PAY2S }, fetch: gw.fetch,
   };
   const server = createApp({ db, config }).listen(0);
@@ -100,6 +101,7 @@ test('billing with payOS and Pay2S', async (t) => {
 
   const c = client(base);
   await c('POST', '/api/auth/signup', { name: 'Owner', email: 'owner@example.com', password: 'matkhau123' });
+  verifyEmail(db, 'owner@example.com');
   const wsId = (await c('GET', '/api/auth/me')).data.workspaces[0].id;
   const wsRow = () => db.prepare('SELECT * FROM workspaces WHERE id = ?').get(wsId);
   const webhook = (provider, body) =>

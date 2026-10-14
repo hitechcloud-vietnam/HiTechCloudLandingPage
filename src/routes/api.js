@@ -7,7 +7,8 @@ const { hashPassword, verifyPassword, requireUser } = require('../auth');
 const { HttpError } = require('../access');
 const { addMonths } = require('../billing');
 const { createRateLimiter } = require('../ratelimit');
-const { acceptInvitation, createInvitation } = require('./account');
+const { acceptInvitation, createInvitation, sendVerificationEmail, isEmailVerified, assertEmailVerified } = require('./account');
+const { couponView, parseCouponInput } = require('../coupons');
 const siteSettings = require('../siteSettings');
 const { snapshotVersion } = require('./content');
 const { assertNotInRunningTest } = require('./abtests');
@@ -15,6 +16,9 @@ const { createDomainVerifier, newDomainToken, CLAIM_TTL_HOURS } = require('../do
 const { transaction } = require('../db');
 const { PLANS, workspacePlan, workspacePlanById, effectivePlanId, publicPlan } = require('../plans');
 const { renderTemplate, listTemplates, listBlocks, BASE_CSS } = require('../templates');
+const { createSafety, assertSiteActive } = require('../safety');
+const { workspaceAssetKeys, removeObjects } = require('../storage');
+const { logger } = require('../logger');
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const DOMAIN_RE = /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
@@ -48,11 +52,17 @@ function csvCell(value) {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
-function createApiRouter({ db, sessions, access, billing, mailer, config, notifier }) {
+function createApiRouter({ db, sessions, access, billing, mailer, config, notifier, storage }) {
   const r = express.Router();
   const domains = createDomainVerifier(config);
+  const safety = createSafety({ db, config, mailer });
   const loginLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 10 });
   const signupLimiter = createRateLimiter({ windowMs: 3600_000, max: 10 });
+  // Slows down guessing of coupon codes.
+  const couponLimiter = createRateLimiter({ windowMs: 10 * 60_000, max: 60 });
+  const checkCouponRate = (req) => {
+    if (!couponLimiter(`u${req.user.id}`)) throw new HttpError(429, 'Bạn thử mã giảm giá quá nhiều lần, vui lòng thử lại sau');
+  };
 
   // Wrap handlers so thrown HttpErrors become JSON responses.
   const h = handler;
@@ -74,7 +84,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   r.get('/billing/providers', h(() => billing.providers()));
 
   // ---------- Auth ----------
-  r.post('/auth/signup', h((req, res) => {
+  r.post('/auth/signup', ha(async (req, res) => {
     if (!signupLimiter(req.ip)) throw new HttpError(429, 'Bạn thao tác quá nhanh, vui lòng thử lại sau');
     const name = str(req.body.name, { required: true, field: 'Họ tên', max: 100 });
     const email = str(req.body.email, { required: true, field: 'Email', max: 200 }).toLowerCase();
@@ -83,13 +93,20 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
     const inviteToken = typeof req.body.inviteToken === 'string' ? req.body.inviteToken : '';
     if (!EMAIL_RE.test(email)) throw new HttpError(400, 'Email không hợp lệ');
     if (password.length < 8 || password.length > 200) throw new HttpError(400, 'Mật khẩu cần ít nhất 8 ký tự');
+    const accepted = [true, 'true', '1', 'on'].includes(req.body.acceptTerms);
+    if (!accepted && config.requireTermsConsent !== false) {
+      throw new HttpError(400, 'Vui lòng đồng ý với Điều khoản sử dụng và Chính sách bảo mật');
+    }
 
     let userId;
     try {
       userId = transaction(db, () => {
         const u = db
-          .prepare('INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)')
-          .run(email, name, hashPassword(password));
+          .prepare(
+            `INSERT INTO users (email, name, password_hash, terms_accepted_at, terms_version)
+             VALUES (?, ?, ?, CASE WHEN ? THEN datetime('now') END, ?)`
+          )
+          .run(email, name, hashPassword(password), accepted ? 1 : 0, accepted ? String(config.termsVersion || '1') : null);
         const id = Number(u.lastInsertRowid);
         // Invited users join the inviter's workspace instead of getting their own.
         if (!inviteToken) {
@@ -112,6 +129,8 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
         db.prepare('INSERT INTO memberships (workspace_id, user_id, role) VALUES (?, ?, ?)').run(w.lastInsertRowid, userId, 'owner');
       }
     }
+    // Accepting an emailed invitation already verifies the address.
+    if (!workspaceId) await sendVerificationEmail(db, { mailer, config }, { id: userId, email, name });
     sessions.create(res, userId);
     res.status(201);
     return { ok: true, workspaceId };
@@ -121,10 +140,11 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
     const email = str(req.body.email, { max: 200 }).toLowerCase();
     const password = typeof req.body.password === 'string' ? req.body.password : '';
     if (!loginLimiter(`${req.ip}:${email}`)) throw new HttpError(429, 'Đăng nhập sai quá nhiều lần, vui lòng thử lại sau 15 phút');
-    const user = db.prepare('SELECT id, password_hash FROM users WHERE email = ?').get(email);
+    const user = db.prepare('SELECT id, password_hash, suspended_at FROM users WHERE email = ?').get(email);
     if (!user || !verifyPassword(password, user.password_hash)) {
       throw new HttpError(401, 'Email hoặc mật khẩu không đúng');
     }
+    if (user.suspended_at) throw new HttpError(403, 'Tài khoản đã bị tạm ngưng do vi phạm điều khoản sử dụng. Vui lòng liên hệ bộ phận hỗ trợ.');
     sessions.create(res, user.id);
     return { ok: true };
   }));
@@ -137,7 +157,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   r.use(requireUser);
 
   r.get('/auth/me', h((req) => ({
-    user: req.user,
+    user: { ...req.user, emailVerified: isEmailVerified(db, req.user.id) },
     workspaces: db
       .prepare(
         `SELECT w.id, w.name, w.plan, w.plan_expires_at, m.role FROM memberships m
@@ -175,22 +195,37 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
     return { ok: true };
   }));
 
-  r.delete('/workspaces/:wid', h((req) => {
+  r.delete('/workspaces/:wid', h(async (req) => {
     const { ws } = access.workspace(req.user, req.params.wid, 'owner');
+    const assetKeys = workspaceAssetKeys(db, [ws.id]);
     db.prepare('DELETE FROM workspaces WHERE id = ?').run(ws.id);
+    if (storage) await removeObjects(storage, assetKeys, req.log || logger);
     return { ok: true };
   }));
 
   // ---------- Billing ----------
   r.post('/workspaces/:wid/checkout', ha(async (req) => {
     const { ws } = access.workspace(req.user, req.params.wid, 'admin');
-    return billing.checkout({ ws, user: req.user, plan: req.body.plan, months: req.body.months, provider: req.body.provider });
+    assertEmailVerified(db, req.user.id, 'thanh toán nâng cấp gói');
+    const { plan, months, provider, coupon } = req.body;
+    if (coupon) checkCouponRate(req);
+    return billing.checkout({ ws, user: req.user, plan, months, provider, coupon });
+  }));
+
+  r.post('/workspaces/:wid/coupon/preview', h((req) => {
+    access.workspace(req.user, req.params.wid, 'admin');
+    checkCouponRate(req);
+    const { valid, listAmount, discount, amount, message } = billing.quote(req.body);
+    return { valid, listAmount, discount, amount, message };
   }));
 
   r.get('/workspaces/:wid/orders', h((req) => {
     const { ws } = access.workspace(req.user, req.params.wid);
     return db
-      .prepare('SELECT id, plan, months, amount, provider, status, checkout_url, created_at, paid_at FROM orders WHERE workspace_id = ? ORDER BY id DESC LIMIT 100')
+      .prepare(
+        `SELECT id, plan, months, amount, list_amount, discount_vnd, coupon_code, provider, status, checkout_url, created_at, paid_at
+         FROM orders WHERE workspace_id = ? ORDER BY id DESC LIMIT 100`
+      )
       .all(ws.id)
       .map((o) => ({ ...o, checkout_url: o.status === 'pending' ? o.checkout_url : null }));
   }));
@@ -211,7 +246,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
       mrrVnd: paidWorkspaces.reduce((sum, w) => sum + PLANS[w.plan].priceVnd, 0),
       sites: one('SELECT COUNT(*) AS n FROM sites'),
       publishedPages: one('SELECT COUNT(*) AS n FROM pages WHERE published_at IS NOT NULL'),
-      leadsThisMonth: one('SELECT COUNT(*) AS n FROM leads WHERE created_at >= ?', monthStart()),
+      leadsThisMonth: one("SELECT COUNT(*) AS n FROM leads WHERE created_at >= ? AND status != 'spam'", monthStart()),
       revenueThisMonthVnd: one("SELECT COALESCE(SUM(amount), 0) AS n FROM orders WHERE status = 'paid' AND paid_at >= ?", monthStart()),
       revenueTotalVnd: one("SELECT COALESCE(SUM(amount), 0) AS n FROM orders WHERE status = 'paid'"),
     };
@@ -232,11 +267,52 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   r.get('/admin/orders', requireSuperAdmin, h(() =>
     db
       .prepare(
-        `SELECT o.id, o.workspace_id, w.name AS workspace_name, o.plan, o.months, o.amount, o.provider, o.status, o.order_code, o.created_at, o.paid_at
+        `SELECT o.id, o.workspace_id, w.name AS workspace_name, o.plan, o.months, o.amount, o.discount_vnd, o.coupon_code, o.provider, o.status, o.order_code, o.created_at, o.paid_at
          FROM orders o LEFT JOIN workspaces w ON w.id = o.workspace_id ORDER BY o.id DESC LIMIT 200`
       )
       .all()
   ));
+
+  // Coupons: discount value and code are fixed after creation (orders refer to them).
+  const couponById = (id) => {
+    const row = db.prepare('SELECT * FROM coupons WHERE id = ?').get(id);
+    if (!row) throw new HttpError(404, 'Không tìm thấy mã giảm giá');
+    return row;
+  };
+
+  r.get('/admin/coupons', requireSuperAdmin, h(() =>
+    db
+      .prepare(
+        `SELECT c.*,
+           (SELECT COALESCE(SUM(o.discount_vnd), 0) FROM orders o WHERE o.coupon_code = c.code AND o.status = 'paid') AS discount_total_vnd
+         FROM coupons c ORDER BY c.id DESC`
+      )
+      .all()
+      .map(couponView)
+  ));
+
+  r.post('/admin/coupons', requireSuperAdmin, h((req, res) => {
+    const c = parseCouponInput(req.body, { create: true });
+    const cols = Object.keys(c);
+    try {
+      const info = db.prepare(`INSERT INTO coupons (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...Object.values(c));
+      res.status(201);
+      return couponView(couponById(Number(info.lastInsertRowid)));
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new HttpError(409, 'Mã giảm giá đã tồn tại');
+      throw err;
+    }
+  }));
+
+  r.patch('/admin/coupons/:id', requireSuperAdmin, h((req) => {
+    const current = couponById(req.params.id);
+    const c = parseCouponInput(req.body, { current });
+    const cols = Object.keys(c);
+    if (cols.length) {
+      db.prepare(`UPDATE coupons SET ${cols.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...Object.values(c), current.id);
+    }
+    return couponView(couponById(current.id));
+  }));
 
   // Manual plan grant (e.g. bank transfer outside the gateways, enterprise deals).
   r.post('/workspaces/:wid/plan', requireSuperAdmin, h((req) => {
@@ -460,7 +536,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
       .prepare(
         `SELECT ${PAGE_FIELDS.split(', ').map((f) => `p.${f}`).join(', ')},
            (SELECT COALESCE(SUM(v.views), 0) FROM page_views v WHERE v.page_id = p.id AND v.day >= ?) AS views_30d,
-           (SELECT COUNT(*) FROM leads l WHERE l.site_id = p.site_id AND l.page_slug = p.slug AND l.created_at >= ?) AS leads_30d
+           (SELECT COUNT(*) FROM leads l WHERE l.site_id = p.site_id AND l.page_slug = p.slug AND l.created_at >= ? AND l.status != 'spam') AS leads_30d
          FROM pages p WHERE p.site_id = ? ORDER BY p.slug = 'index' DESC, p.id`
       )
       .all(since, since, site.id);
@@ -554,9 +630,12 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
 
   r.post('/pages/:pid/publish', h((req) => {
     const { page } = access.page(req.user, req.params.pid);
+    assertEmailVerified(db, req.user.id, 'xuất bản trang');
+    assertSiteActive(db, page.site_id);
     snapshotVersion(db, page.id, req.user.id);
     db.prepare("UPDATE pages SET published_html = draft_html, published_css = draft_css, published_at = datetime('now') WHERE id = ?").run(page.id);
-    return { ok: true, publishedAt: db.prepare('SELECT published_at FROM pages WHERE id = ?').get(page.id).published_at };
+    const review = safety.onPublish(page.id);
+    return { ok: true, publishedAt: db.prepare('SELECT published_at FROM pages WHERE id = ?').get(page.id).published_at, ...(review.suspended && { suspended: true }) };
   }));
 
   r.post('/pages/:pid/unpublish', h((req) => {
@@ -567,7 +646,8 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   }));
 
   // ---------- Leads ----------
-  const LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
+  // 'spam' is set by the lead guard (src/leadGuard.js) and hidden unless filtered for.
+  const LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost', 'spam'];
 
   r.get('/sites/:sid/leads', h((req, res) => {
     const { site } = access.site(req.user, req.params.sid);
@@ -576,6 +656,8 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
     if (LEAD_STATUSES.includes(req.query.status)) {
       where.push('status = ?');
       args.push(req.query.status);
+    } else {
+      where.push("status != 'spam'");
     }
     if (/^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '')) {
       where.push('created_at >= ?');
@@ -592,7 +674,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
       args.push(like, like);
     }
     const rows = db
-      .prepare(`SELECT id, page_slug, data_json, source_json, status, note, created_at FROM leads WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT 5000`)
+      .prepare(`SELECT id, page_slug, data_json, source_json, status, note, created_at, spam_score, flags_json, duplicate_of FROM leads WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT 5000`)
       .all(...args)
       .map((l) => ({
         id: l.id,
@@ -602,6 +684,9 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
         status: l.status,
         note: l.note,
         createdAt: l.created_at,
+        spamScore: l.spam_score,
+        flags: JSON.parse(l.flags_json || '[]'),
+        duplicateOf: l.duplicate_of,
       }));
 
     if (req.query.format !== 'csv') return rows;

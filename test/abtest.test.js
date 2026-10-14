@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { startServer, client } = require('./helpers');
+const { startServer, client, verifyEmail } = require('./helpers');
 const { confidence } = require('../src/routes/abtests');
 
 test('confidence of a two-proportion test', () => {
@@ -18,6 +18,7 @@ test('A/B testing: split traffic, sticky buckets, stats, promote winner', async 
 
   const c = client(base);
   await c('POST', '/api/auth/signup', { name: 'Chủ', email: 'owner@example.com', password: 'matkhau123' });
+  verifyEmail(db, 'owner@example.com');
   const wsId = (await c('GET', '/api/auth/me')).data.workspaces[0].id;
   const site = (await c('POST', `/api/workspaces/${wsId}/sites`, { name: 'Shop', subdomain: 'shop', template: 'blank' })).data;
   const control = (await c('GET', `/api/sites/${site.id}/pages`)).data[0];
@@ -70,7 +71,7 @@ test('A/B testing: split traffic, sticky buckets, stats, promote winner', async 
 
   await t.test('stats count only test traffic, per bucket', async () => {
     const post = (action) =>
-      fetch(base + action, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'phone=09' });
+      fetch(base + action, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'phone=0901234567' });
     const a = visitors.find((v) => v.which === 'A');
     const bs = visitors.filter((v) => v.which === 'B').slice(0, 2);
     const res = await post(a.action);
