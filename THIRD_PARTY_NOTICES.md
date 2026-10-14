@@ -9,6 +9,7 @@
 | grapesjs-plugin-forms | BSD-3-Clause | Block biểu mẫu |
 | font-awesome 4.7.0 | OFL-1.1 (font), MIT (CSS) | Biểu tượng của giao diện editor |
 | express | MIT | Web server |
+| express-rate-limit | MIT | Giới hạn tần suất cho endpoint công khai (hủy nhận email) |
 
 Giấy phép BSD-3-Clause yêu cầu giữ thông báo bản quyền gốc. Thông báo này đã có sẵn trong `node_modules/*/LICENSE`. Giấy phép cũng không cho phép dùng tên GrapesJS để quảng bá sản phẩm khi chưa được đồng ý.
 

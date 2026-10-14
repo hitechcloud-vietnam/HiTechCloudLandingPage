@@ -19,6 +19,7 @@ const { renderTemplate, listTemplates, listBlocks, BASE_CSS } = require('../temp
 const { createSafety, assertSiteActive } = require('../safety');
 const { workspaceAssetKeys, removeObjects } = require('../storage');
 const { logger } = require('../logger');
+const { sendWelcomeEmails } = require('../lifecycle');
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const DOMAIN_RE = /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
@@ -129,6 +130,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
         db.prepare('INSERT INTO memberships (workspace_id, user_id, role) VALUES (?, ?, ?)').run(w.lastInsertRowid, userId, 'owner');
       }
     }
+    sendWelcomeEmails({ db, mailer, config, userId });
     // Accepting an emailed invitation already verifies the address.
     if (!workspaceId) await sendVerificationEmail(db, { mailer, config }, { id: userId, email, name });
     sessions.create(res, userId);
@@ -223,11 +225,18 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
     const { ws } = access.workspace(req.user, req.params.wid);
     return db
       .prepare(
-        `SELECT id, plan, months, amount, list_amount, discount_vnd, coupon_code, provider, status, checkout_url, created_at, paid_at
-         FROM orders WHERE workspace_id = ? ORDER BY id DESC LIMIT 100`
+        `SELECT o.id, o.plan, o.months, o.amount, o.list_amount, o.discount_vnd, o.coupon_code, o.provider, o.status, o.checkout_url, o.created_at, o.paid_at,
+           ir.status AS invoice_status, ir.invoice_no, ir.lookup_code, ir.lookup_url, ir.cancel_reason
+         FROM orders o LEFT JOIN invoice_requests ir ON ir.order_id = o.id WHERE o.workspace_id = ? ORDER BY o.id DESC LIMIT 100`
       )
       .all(ws.id)
-      .map((o) => ({ ...o, checkout_url: o.status === 'pending' ? o.checkout_url : null }));
+      .map(({ invoice_status, invoice_no, lookup_code, lookup_url, cancel_reason, ...o }) => ({
+        ...o,
+        checkout_url: o.status === 'pending' ? o.checkout_url : null,
+        invoice: invoice_status
+          ? { status: invoice_status, invoiceNo: invoice_no, lookupCode: lookup_code, lookupUrl: lookup_url, cancelReason: cancel_reason }
+          : null,
+      }));
   }));
 
   // ---------- Platform admin ----------
@@ -452,7 +461,8 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
     const domain = site.custom_domain
       ? { name: site.custom_domain, verified: !!site.domain_verified_at, ...domains.instructions(site) }
       : null;
-    return { ...rest, role, settings, domain };
+    // Channels that need platform credentials report whether they are usable.
+    return { ...rest, role, settings, domain, integrations: { zalo: notifier.zalo.enabled() } };
   }
 
   r.get('/sites/:sid', h((req) => {
@@ -462,8 +472,10 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
 
   r.patch('/sites/:sid/settings', h((req) => {
     const { site, role } = access.site(req.user, req.params.sid, 'admin');
-    const next = siteSettings.applyUpdate(siteSettings.parse(site), req.body || {}, workspacePlanById(db, site.workspace_id));
+    const current = siteSettings.parse(site);
+    const next = siteSettings.applyUpdate(current, req.body || {}, workspacePlanById(db, site.workspace_id));
     db.prepare('UPDATE sites SET settings_json = ? WHERE id = ?').run(JSON.stringify(next), site.id);
+    if (current.zaloRefreshToken && !next.zaloRefreshToken) notifier.zalo.forget(site.id);
     return siteView(db.prepare('SELECT * FROM sites WHERE id = ?').get(site.id), role);
   }));
 
@@ -480,7 +492,14 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
 
   r.post('/sites/:sid/notify-test', ha(async (req) => {
     const { site } = access.site(req.user, req.params.sid, 'admin');
-    return notifier.leadCreated({ site, pageSlug: 'index', data: { name: 'Khách hàng thử nghiệm', phone: '0900000000', message: 'Đây là thông báo thử từ HiTechCloud' } });
+    // Optional { channel: 'zalo' } tests a single channel.
+    const channel = req.body && typeof req.body.channel === 'string' ? req.body.channel : undefined;
+    return notifier.leadCreated({
+      site,
+      pageSlug: 'index',
+      data: { name: 'Khách hàng thử nghiệm', phone: '0900000000', message: 'Đây là thông báo thử từ HiTechCloud' },
+      only: channel,
+    });
   }));
 
   r.patch('/sites/:sid', h((req) => {
@@ -724,4 +743,4 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   return { router: r, usage };
 }
 
-module.exports = { createApiRouter };
+module.exports = { createApiRouter, csvCell };

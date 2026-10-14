@@ -80,6 +80,9 @@ test.describe('Khả năng truy cập & hiển thị di động', () => {
     await signupAndVerify(page);
     await expect(page.locator('#ws-name')).not.toHaveText('…');
     await expect(page.locator('#sites .card').first()).toBeVisible();
+    // Onboarding checklist is shown (and measured) for a new workspace.
+    await expect(page.locator('#onboarding')).toBeVisible();
+    await expect(page.locator('#onb-steps li')).toHaveCount(6);
     await expectAccessible(page, errors);
 
     // The create-site dialog fits the screen and labels its fields too.
@@ -88,6 +91,13 @@ test.describe('Khả năng truy cập & hiển thị di động', () => {
     await expect(page.locator('#templates input[type="radio"]').first()).toBeVisible();
     await expectAccessible(page, errors);
     await page.keyboard.press('Escape');
+
+    // Billing: plans, VAT invoice details (both buyer types), payment history.
+    await page.locator('.tabs [data-tab="billing"]').click();
+    await expect(page.locator('#invoice-profile-form')).toBeVisible();
+    await expectAccessible(page, errors);
+    await page.locator('#bp-type').selectOption('individual');
+    await expectAccessible(page, errors);
 
     // Account settings: password change, API keys, personal-data rights.
     await page.locator('.tabs [data-tab="settings"]').click();

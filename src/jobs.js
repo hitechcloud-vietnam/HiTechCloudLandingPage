@@ -2,6 +2,7 @@
 
 const { PLANS } = require('./plans');
 const { logger } = require('./logger');
+const { sendWelcomeEmails, sendActivationNudges, sendWeeklyDigests } = require('./lifecycle');
 
 const REMINDER_DAYS = [7, 1];
 
@@ -24,7 +25,7 @@ function sendExpiryReminders({ db, mailer, config, now = new Date() }) {
     if (ws.expiry_notice && ws.expiry_notice.startsWith(`${ws.plan_expires_at}:`) && Number(ws.expiry_notice.split(':').pop()) <= stage) continue;
 
     const recipients = db
-      .prepare("SELECT u.email, u.name FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? AND m.role IN ('owner', 'admin')")
+      .prepare("SELECT u.email, u.name FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? AND m.role IN ('owner', 'admin') AND u.suspended_at IS NULL")
       .all(ws.id);
     const date = new Date(ws.plan_expires_at).toLocaleDateString('vi-VN');
     for (const r of recipients) {
@@ -49,12 +50,21 @@ function purgeExpired(db) {
 }
 
 function startJobs({ db, mailer, config }) {
+  const jobs = {
+    purgeExpired: () => purgeExpired(db),
+    sendExpiryReminders,
+    sendWelcomeEmails,
+    sendActivationNudges,
+    sendWeeklyDigests,
+  };
+  // Each job runs on its own so one failure does not skip the others.
   const run = () => {
-    try {
-      purgeExpired(db);
-      sendExpiryReminders({ db, mailer, config });
-    } catch (err) {
-      logger.error('[jobs] background job failed', { component: 'jobs', err });
+    for (const [name, job] of Object.entries(jobs)) {
+      try {
+        job({ db, mailer, config, now: new Date() });
+      } catch (err) {
+        logger.error(`[jobs] ${name} failed`, { component: 'jobs', job: name, err });
+      }
     }
   };
   run();

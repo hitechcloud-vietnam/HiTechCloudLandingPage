@@ -214,6 +214,66 @@ CREATE TABLE IF NOT EXISTS coupons (
   CHECK ((percent_off IS NULL) <> (amount_off_vnd IS NULL))
 );
 
+-- VAT invoice (hóa đơn GTGT) buyer details, one per workspace.
+CREATE TABLE IF NOT EXISTS billing_profiles (
+  workspace_id INTEGER PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+  buyer_type TEXT NOT NULL CHECK (buyer_type IN ('company', 'individual')),
+  company_name TEXT NOT NULL DEFAULT '',
+  tax_code TEXT NOT NULL DEFAULT '',
+  address TEXT NOT NULL DEFAULT '',
+  email TEXT NOT NULL,
+  buyer_name TEXT NOT NULL DEFAULT '',
+  auto_invoice INTEGER NOT NULL DEFAULT 0,
+  updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Invoice requests snapshot the buyer details at request time; issued manually
+-- in the e-invoice software and recorded here.
+CREATE TABLE IF NOT EXISTS invoice_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  auto INTEGER NOT NULL DEFAULT 0,
+  buyer_type TEXT NOT NULL,
+  company_name TEXT NOT NULL DEFAULT '',
+  tax_code TEXT NOT NULL DEFAULT '',
+  address TEXT NOT NULL DEFAULT '',
+  email TEXT NOT NULL,
+  buyer_name TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'issued', 'cancelled')),
+  invoice_no TEXT,
+  lookup_code TEXT,
+  lookup_url TEXT,
+  cancel_reason TEXT,
+  processed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  processed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_invoice_requests_status ON invoice_requests(status, id);
+CREATE INDEX IF NOT EXISTS idx_invoice_requests_workspace ON invoice_requests(workspace_id, id);
+
+-- Zalo OA token pair per site (rotates on every refresh; never sent to clients).
+-- seed_hash = sha256 of the refresh token saved in site settings that started the chain.
+CREATE TABLE IF NOT EXISTS zalo_tokens (
+  site_id INTEGER PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE,
+  seed_hash TEXT NOT NULL,
+  refresh_token TEXT NOT NULL,
+  access_token TEXT,
+  expires_at INTEGER,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Dashboard onboarding checklist hidden by a user for one workspace.
+CREATE TABLE IF NOT EXISTS onboarding_dismissals (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  dismissed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, workspace_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_ab_page ON ab_tests(page_id, status);
 CREATE INDEX IF NOT EXISTS idx_assets_workspace ON assets(workspace_id, id);
 CREATE INDEX IF NOT EXISTS idx_versions_page ON page_versions(page_id, id);
@@ -270,6 +330,12 @@ function migrate(db) {
   add('users', 'terms_accepted_at', 'TEXT');
   add('users', 'terms_version', 'TEXT');
   add('users', 'suspended_reason', 'TEXT');
+  // Lifecycle emails (see lifecycle.js). Existing accounts never get a welcome email.
+  if (add('users', 'welcome_sent_at', 'TEXT')) db.exec('UPDATE users SET welcome_sent_at = created_at');
+  add('users', 'nudge_sent_at', 'TEXT');
+  add('users', 'email_digest', 'INTEGER NOT NULL DEFAULT 1');
+  add('users', 'email_tips', 'INTEGER NOT NULL DEFAULT 1');
+  add('workspaces', 'digest_week', 'TEXT');
 }
 
 // Runs fn inside a transaction, rolling back on error.

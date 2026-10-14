@@ -1,0 +1,58 @@
+name: Release
+
+# Push a tag like v1.0.0 on main to publish a GitHub Release (notes from CHANGELOG.md)
+# and a Docker image ghcr.io/<owner>/<repo>:<tag> (+ :latest).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test before release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  release:
+    name: GitHub Release
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          awk -v h="## [${GITHUB_REF_NAME}]" 'index($0, "## [") == 1 { p = (index($0, h) == 1); if (p) next } p' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "Xem CHANGELOG.md" > notes.md; fi
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "HiTechCloud LandingPage $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+
+  image:
+    name: Docker image (GHCR)
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build and push
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker build -t "$IMAGE:$GITHUB_REF_NAME" -t "$IMAGE:latest" .
+          docker push "$IMAGE:$GITHUB_REF_NAME"
+          docker push "$IMAGE:latest"

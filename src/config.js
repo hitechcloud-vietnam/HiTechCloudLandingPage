@@ -47,6 +47,11 @@ const config = {
   metricsToken: process.env.METRICS_TOKEN || '',
   // Slack/Discord-compatible incoming webhook for 5xx / crash alerts.
   errorWebhookUrl: process.env.ERROR_WEBHOOK_URL || '',
+  // Zalo app of the platform (developers.zalo.me) used to refresh each site's OA tokens.
+  zalo: {
+    appId: process.env.ZALO_APP_ID || '',
+    appSecret: process.env.ZALO_APP_SECRET || '',
+  },
   // HMAC key for the anti-bot timestamp in published forms (see leadGuard.js).
   leadSecret: process.env.LEAD_SECRET || '',
   payments: {

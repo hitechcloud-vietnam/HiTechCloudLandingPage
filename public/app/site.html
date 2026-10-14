@@ -236,6 +236,23 @@
   }
 }</code></pre>
         </details></div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
+        <div><label for="i-zalotoken">Zalo OA refresh token</label><input id="i-zalotoken" name="zaloRefreshToken" autocomplete="off"></div>
+        <div><label for="i-zalousers">Zalo user ID người nhận (tối đa 5)</label><input id="i-zalousers" name="zaloUserIds" inputmode="numeric" placeholder="1234567890123456789, ..."></div>
+      </div>
+      <div class="hint" id="zalo-hint">Gửi tin nhắn tư vấn từ Zalo Official Account của bạn tới nhân viên đã quan tâm OA. Hệ thống tự làm mới access token.</div>
+      <details class="hint">
+        <summary style="cursor:pointer">Hướng dẫn kết nối Zalo OA</summary>
+        <ol style="margin:6px 0;padding-left:18px">
+          <li>Quản trị viên OA cấp quyền cho ứng dụng Zalo của HiTechCloud và lấy <b>refresh token</b> của OA (xem README hoặc liên hệ hỗ trợ), dán vào ô trên. Token được lưu bảo mật và tự xoay vòng; khi cấp quyền lại chỉ cần dán token mới.</li>
+          <li>Mỗi người nhận bấm <b>Quan tâm</b> OA trên Zalo và nhắn cho OA một tin bất kỳ, sau đó lấy <b>user ID</b> (dãy số, riêng theo từng OA) của họ từ webhook của OA hoặc API danh sách người quan tâm.</li>
+          <li>Zalo chỉ cho gửi tin tư vấn tới người đã tương tác với OA trong khoảng thời gian quy định; nếu báo lỗi, người nhận hãy nhắn lại cho OA.</li>
+        </ol>
+      </details>
+      <div class="row" style="justify-content:flex-start">
+        <button class="btn btn-ghost btn-sm" type="button" id="zalo-test">Gửi thử Zalo</button>
+        <span class="muted" id="zalo-status" style="overflow-wrap:anywhere"></span>
+      </div>
 
       <h3 style="margin:8px 0 0">Chống spam &amp; chất lượng lead</h3>
       <label class="inline" style="font-weight:400;white-space:normal"><input type="checkbox" id="i-reqphone" style="width:auto"> Chỉ nhận số điện thoại Việt Nam hợp lệ (tự chuẩn hóa về dạng 0xxxxxxxxx)</label>
@@ -324,12 +341,14 @@ async function load() {
     f.elements[name].value = st[name] || '';
   }
   f.elements.notifyEmails.value = (st.notifyEmails || []).join(', ');
+  f.elements.zaloUserIds.value = (st.zaloUserIds || []).join(', ');
   f.elements.telegramBotToken.value = '';
   f.elements.telegramBotToken.placeholder = st.hasTelegramToken ? '•••••• (đã lưu, để trống để giữ nguyên, nhập - để xóa)' : '123456:ABC…';
   const secretUrls = {
     slackWebhookUrl: [st.hasSlackWebhook, 'https://hooks.slack.com/services/…'],
     discordWebhookUrl: [st.hasDiscordWebhook, 'https://discord.com/api/webhooks/…'],
     sheetsWebhookUrl: [st.hasSheetsWebhook, 'https://script.google.com/macros/s/…/exec'],
+    zaloRefreshToken: [st.hasZaloRefreshToken, 'Refresh token của OA'],
   };
   for (const [name, [saved, example]] of Object.entries(secretUrls)) {
     f.elements[name].value = '';
@@ -343,6 +362,9 @@ async function load() {
   $('#hook-secret').textContent = st.webhookSecret ? `Chữ ký: header X-HTC-Signature = sha256=HMAC_SHA256(body, "${st.webhookSecret}")` : '';
   const canAdmin = site.role !== 'editor';
   f.querySelectorAll('input, textarea, button').forEach((el) => { el.disabled = !canAdmin; });
+  const zaloOn = !!(site.integrations && site.integrations.zalo);
+  $('#zalo-test').disabled = !canAdmin || !zaloOn;
+  if (!zaloOn) $('#zalo-hint').textContent = 'Kênh Zalo OA chưa được bật trên hệ thống này (quản trị viên cần cấu hình ZALO_APP_ID và ZALO_APP_SECRET).';
   await Promise.all([loadPages(), loadLeads(), loadAbTests()]);
 }
 
@@ -456,6 +478,12 @@ document.querySelectorAll('.tabs button').forEach((btn) => {
   };
 });
 
+// Deep link to a tab, e.g. /app/site?id=1&tab=settings (dashboard onboarding checklist).
+{
+  const tab = new URLSearchParams(location.search).get('tab');
+  if (tab && /^[a-z]+$/.test(tab)) document.querySelector(`.tabs [data-tab="${tab}"]`)?.click();
+}
+
 $('#pages').onclick = async (e) => {
   const { publish, unpublish, delete: del, duplicate } = e.target.dataset;
   showError();
@@ -507,11 +535,19 @@ $('#notify-test').onclick = async () => {
   $('#integrations-status').textContent = 'Đang gửi…';
   try {
     const r = await api(`/sites/${siteId}/notify-test`, { method: 'POST', body: {} });
-    const names = { email: 'Email', webhook: 'Webhook', telegram: 'Telegram', slack: 'Slack', discord: 'Discord', sheets: 'Google Sheets' };
+    const names = { email: 'Email', webhook: 'Webhook', telegram: 'Telegram', slack: 'Slack', discord: 'Discord', sheets: 'Google Sheets', zalo: 'Zalo OA' };
     $('#integrations-status').textContent = Object.keys(r).length
       ? Object.entries(r).map(([k, v]) => `${names[k] || k}: ${v === 'ok' ? '✓' : v}`).join(' · ')
       : 'Chưa cấu hình kênh nào';
   } catch (err) { showError(err); }
+};
+
+$('#zalo-test').onclick = async () => {
+  $('#zalo-status').textContent = 'Đang gửi…';
+  try {
+    const r = await api(`/sites/${siteId}/notify-test`, { method: 'POST', body: { channel: 'zalo' } });
+    $('#zalo-status').textContent = r.zalo ? (r.zalo === 'ok' ? 'Zalo OA: ✓ đã gửi' : `Zalo OA: ${r.zalo}`) : 'Chưa lưu refresh token hoặc người nhận Zalo';
+  } catch (err) { $('#zalo-status').textContent = ''; showError(err); }
 };
 
 $('#delete-site').onclick = async () => {

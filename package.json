@@ -1,6 +1,6 @@
 {
   "name": "hitechcloud-landingpage",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "HiTechCloud LandingPage - nền tảng SaaS tạo landing page kéo thả (GrapesJS) đa người thuê",
   "main": "src/server.js",
@@ -22,6 +22,7 @@
   "license": "UNLICENSED",
   "dependencies": {
     "express": "^4.22.3",
+    "express-rate-limit": "^7.5.1",
     "font-awesome": "4.7.0",
     "grapesjs": "0.23.6",
     "grapesjs-blocks-basic": "^1.0.2",

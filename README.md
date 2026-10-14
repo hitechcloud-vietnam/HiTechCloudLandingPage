@@ -4,6 +4,9 @@ Nền tảng **SaaS tạo landing page kéo thả** cho doanh nghiệp Việt Na
 
 Lõi trình thiết kế dùng [GrapesJS](https://github.com/GrapesJS/grapesjs). Kiến trúc SaaS (workspace, xuất bản, tên miền, thu lead) được thiết kế tham khảo ý tưởng từ [Webstudio](https://github.com/webstudio-is/webstudio) và [OpenPage](https://github.com/buildingopen/openpage), nhưng **không sao chép mã nguồn** của hai dự án này. Lý do xem mục [Giấy phép](#giấy-phép-mã-nguồn-bên-thứ-ba).
 
+- **Triển khai production:** [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- **Kế hoạch và việc chưa hoàn thành (cho dev tiếp tục):** [PLAN.md](PLAN.md), chi tiết từng việc trong [docs/todo/](docs/todo/)
+
 ## Tính năng
 
 | Nhóm | Chi tiết |
@@ -19,11 +22,12 @@ Lõi trình thiết kế dùng [GrapesJS](https://github.com/GrapesJS/grapesjs).
 | Gói dịch vụ | Miễn phí / Pro / Business, giới hạn số website, trang, thành viên, lead/tháng, tên miền riêng, gỡ nhãn "Tạo bởi HiTechCloud" |
 | Thanh toán | **payOS** (VietQR) và **Pay2S**. Thanh toán theo chu kỳ 1 tháng hoặc 12 tháng (tặng 2 tháng). Gói tự hết hạn và quay về gói Miễn phí. Gia hạn được cộng dồn vào thời gian còn lại. Webhook xác thực chữ ký HMAC, xử lý trùng lặp an toàn (idempotent) và đối chiếu số tiền |
 | Mã giảm giá | Super admin tạo mã giảm theo % hoặc số tiền cố định, giới hạn theo gói, chu kỳ (1/12 tháng), số lượt dùng và ngày hết hạn; bật/tắt bất kỳ lúc nào. Khách nhập mã ở tab Gói dịch vụ để xem giá sau giảm. Cổng thanh toán nhận số tiền đã giảm (tối thiểu 10.000đ); mã giảm 100% kích hoạt gói ngay, không qua cổng. Lượt dùng chỉ được tính khi đơn đã thanh toán. Email xác nhận ghi rõ giá gốc, số tiền giảm và số tiền đã trả |
-| Quản trị nền tảng | `/app/admin`: số người dùng, workspace trả phí, MRR, doanh thu, danh sách khách hàng, lịch sử giao dịch, cấp gói thủ công |
+| Hóa đơn VAT | Khách lưu thông tin xuất hóa đơn (doanh nghiệp/cá nhân, mã số thuế) và gửi yêu cầu cho từng đơn đã thanh toán, hoặc bật tự động gửi khi thanh toán. Kế toán xuất hóa đơn trên phần mềm hóa đơn điện tử, xuất CSV và ghi lại số hóa đơn trong `/app/admin`; khách nhận email kèm mã tra cứu. Xem [Hóa đơn VAT](#hóa-đơn-vat) |
+| Quản trị nền tảng | `/app/admin`: số người dùng, workspace trả phí, MRR, doanh thu, danh sách khách hàng, lịch sử giao dịch, cấp gói thủ công, yêu cầu xuất hóa đơn VAT |
 | Thống kê | Tab “Thống kê” cho từng website: chọn 7/30/90 ngày, lượt xem (bỏ qua bot), lead, tỉ lệ chuyển đổi và % thay đổi so với kỳ trước; biểu đồ theo ngày, trang hiệu quả nhất, nguồn khách hàng (UTM, website giới thiệu, trực tiếp) và trạng thái lead |
 | Tích hợp marketing | Google Analytics 4, Google Tag Manager, Facebook Pixel, TikTok Pixel. Sự kiện chuyển đổi (Lead) gửi tự động khi khách điền form. Favicon, og:image, canonical, `sitemap.xml`, `robots.txt`. Chèn mã tùy chỉnh vào `<head>`/`<body>` (gói Pro trở lên) |
 | API công khai | REST API `/api/v1` cho Zapier/Make/CRM bằng API key của workspace: đọc website, trang, lead; cập nhật trạng thái lead; xuất bản trang. Key chỉ lưu mã băm, thu hồi được, giới hạn 120 yêu cầu/phút (gói Pro trở lên) |
-| Thông báo lead | Email (chủ sở hữu, quản trị viên và tối đa 5 địa chỉ khác), webhook có ký HMAC (Zapier/Make/n8n/CRM, chặn gửi tới địa chỉ nội bộ để chống SSRF), Telegram bot, Slack, Discord, Google Sheets (qua Apps Script). Các kênh gửi song song, nút gửi thông báo thử báo kết quả từng kênh. Xem [Kênh thông báo lead](#kênh-thông-báo-lead) |
+| Thông báo lead | Email (chủ sở hữu, quản trị viên và tối đa 5 địa chỉ khác), webhook có ký HMAC (Zapier/Make/n8n/CRM, chặn gửi tới địa chỉ nội bộ để chống SSRF), Telegram bot, Slack, Discord, Google Sheets (qua Apps Script), Zalo OA (tin nhắn tư vấn tới tối đa 5 người nhận). Các kênh gửi song song, nút gửi thông báo thử báo kết quả từng kênh. Xem [Kênh thông báo lead](#kênh-thông-báo-lead) |
 | Thư viện ảnh | Tải ảnh PNG/JPEG/GIF/WEBP vào editor. Kiểm tra định dạng bằng nội dung file. Dung lượng theo gói: 50 MB / 2 GB / 10 GB |
 | Lịch sử phiên bản | Tự lưu một phiên bản mỗi lần xuất bản (giữ 20 bản gần nhất), khôi phục về bản nháp. Có nhân bản trang |
 | Tài khoản | Quên/đặt lại mật khẩu qua email, mời thành viên qua email, đổi mật khẩu, giới hạn số lần đăng nhập sai |
@@ -57,6 +61,8 @@ Các biến cấu hình nằm trong `.env.example`.
 
 ## Triển khai production (docker-compose + Caddy)
 
+> Hướng dẫn chi tiết từng bước (chuẩn bị máy chủ, DNS, `.env`, SMTP, thanh toán, S3, HTTPS/wildcard, sao lưu & khôi phục, cập nhật, chạy không dùng Docker, giám sát, bảo mật, checklist go-live, xử lý sự cố): **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+
 ```bash
 cp .env.example .env      # điền APP_URL, APP_DOMAIN, PUBLISH_ROOT_DOMAIN, SMTP_URL, khóa payOS/Pay2S…
 docker compose up -d --build
@@ -73,7 +79,7 @@ docker compose up -d --build
 
 ## Kênh thông báo lead
 
-Cấu hình trong **Cài đặt website → Thông báo khi có lead mới**. URL của Slack, Discord và Google Sheets được coi là bí mật: sau khi lưu sẽ không hiển thị lại. Để trống ô khi lưu thì giữ nguyên giá trị cũ, nhập `-` để xóa. Bấm **Gửi thông báo thử** để kiểm tra, kết quả hiện theo từng kênh (vd `Slack: ✓ · Google Sheets: ✓`).
+Cấu hình trong **Cài đặt website → Thông báo khi có lead mới**. URL của Slack, Discord, Google Sheets và refresh token Zalo OA được coi là bí mật: sau khi lưu sẽ không hiển thị lại. Để trống ô khi lưu thì giữ nguyên giá trị cũ, nhập `-` để xóa. Bấm **Gửi thông báo thử** để kiểm tra, kết quả hiện theo từng kênh (vd `Slack: ✓ · Google Sheets: ✓`).
 
 - **Slack:** Slack → *Apps* → *Incoming Webhooks* → *Add to Slack*, chọn kênh rồi dán URL `https://hooks.slack.com/services/…`. Tin nhắn dùng định dạng mrkdwn, liệt kê các trường của lead và kèm link mở dashboard.
 - **Discord:** *Cài đặt kênh* → *Tích hợp* → *Webhook* → *Webhook mới* → *Sao chép URL webhook* (`https://discord.com/api/webhooks/…`). Nội dung tối đa 2000 ký tự (phần dài hơn bị cắt), không ping @everyone.
@@ -104,6 +110,32 @@ function doPost(e) {
 ```
 
 > Apps Script trả về mã 302 (chuyển hướng tới kết quả). Hệ thống coi 2xx/3xx là gửi thành công và không theo chuyển hướng. Mỗi lần sửa mã cần *Quản lý triển khai* → tạo phiên bản mới để thay đổi có hiệu lực.
+
+### Zalo OA
+
+Mỗi lead mới (không phải spam, không trùng) được gửi thành tin nhắn tư vấn dạng văn bản từ Zalo Official Account của khách hàng tới tối đa 5 người nhận (vd nhân viên sale): tên website, trang, họ tên / SĐT / email, các trường khác (rút gọn), nguồn UTM và link mở dashboard. Lỗi gửi Zalo chỉ được ghi log, không ảnh hưởng việc nhận lead. Có ở mọi gói, giống các kênh thông báo khác.
+
+**1. Nền tảng (làm một lần):** tạo ứng dụng tại [developers.zalo.me](https://developers.zalo.me) → lấy *App ID* và *Khóa bí mật* (secret key), đặt vào `ZALO_APP_ID`, `ZALO_APP_SECRET`. Trong phần *Official Account* của ứng dụng, khai báo *Callback URL* dùng cho bước cấp quyền OA và bật quyền gửi tin nhắn của OA. Khi chưa cấu hình hai biến này, ô Zalo vẫn lưu được nhưng không gửi và nút *Gửi thử Zalo* bị khóa.
+
+**2. Cấp quyền OA, lấy refresh token (mỗi website):** quản trị viên OA mở link cấp quyền OAuth v4 của ứng dụng nền tảng:
+
+```
+https://oauth.zaloapp.com/v4/oa/permission?app_id=<ZALO_APP_ID>&redirect_uri=<CALLBACK_URL>&code_challenge=<CODE_CHALLENGE>&state=<STATE>
+```
+
+đăng nhập, chọn OA và đồng ý. Zalo chuyển hướng về Callback URL kèm `code` (hiệu lực ngắn). Đổi `code` lấy token:
+
+```bash
+curl -X POST https://oauth.zaloapp.com/v4/oa/access_token \
+  -H "secret_key: $ZALO_APP_SECRET" \
+  -d code=<CODE> -d app_id=$ZALO_APP_ID -d grant_type=authorization_code -d code_verifier=<CODE_VERIFIER>
+```
+
+(`code_challenge` = Base64URL(SHA-256(`code_verifier`)), PKCE.) Dán `refresh_token` trong kết quả vào ô **Zalo OA refresh token**. Nếu người quản lý ứng dụng cũng là quản trị viên OA, có thể lấy nhanh access/refresh token bằng *API Explorer* của Zalo for Developers.
+
+Access token sống khoảng 25 giờ; refresh token khoảng 3 tháng và chỉ dùng được một lần. Hệ thống tự làm mới access token khi hết hạn hoặc khi Zalo báo token không hợp lệ (làm mới một lần rồi gửi lại một lần), lưu refresh token mới ở máy chủ (bảng `zalo_tokens`, không bao giờ trả về trình duyệt). Dán token mới (sau khi cấp quyền lại) sẽ thay thế chuỗi token cũ; nhập `-` để xóa. Nếu *Gửi thử Zalo* báo *không làm mới được access token*, hãy cấp quyền lại và dán refresh token mới.
+
+**3. Người nhận:** mỗi người nhận bấm *Quan tâm* OA trên Zalo và nhắn cho OA một tin. *User ID* là dãy số riêng theo từng OA (cùng một người có ID khác nhau ở các OA khác nhau), lấy từ webhook sự kiện của OA (`sender.id`) hoặc API danh sách người quan tâm (`/v3.0/oa/user/getlist`). Nhập tối đa 5 ID, cách nhau bởi dấu phẩy. Zalo chỉ cho gửi tin tư vấn tới người đã tương tác với OA trong khoảng thời gian chính sách hiện hành cho phép; nếu người nhận bị báo lỗi, họ chỉ cần nhắn lại cho OA.
 
 ## Lưu trữ ảnh
 
@@ -166,6 +198,54 @@ Cổng nào có đủ biến môi trường thì sẽ hiện trong tab **Gói d�
 >
 > Trước khi chạy production, cần **chạy thử trên sandbox Pay2S** để xác nhận tên trường URL thanh toán trả về (`payUrl`), mã thành công và nội dung phản hồi IPN mà Pay2S yêu cầu.
 
+## Hóa đơn VAT
+
+Hệ thống **chưa tích hợp API nhà cung cấp hóa đơn điện tử**. Phần mềm chỉ thu thập thông tin người mua và quản lý quy trình. Kế toán xuất hóa đơn GTGT điện tử thủ công trên phần mềm đang dùng (MISA meInvoice, VNPT, Viettel S-Invoice…) rồi ghi lại số hóa đơn.
+
+1. **Thông tin xuất hóa đơn** (tab **Gói dịch vụ**, chỉ chủ sở hữu/quản trị viên). Mỗi workspace có một bộ thông tin:
+   - Loại người mua: doanh nghiệp/tổ chức hoặc cá nhân.
+   - Doanh nghiệp: tên đơn vị, mã số thuế và địa chỉ là bắt buộc. Mã số thuế gồm 10 chữ số, hoặc 10 chữ số kèm `-` và 3 chữ số với đơn vị phụ thuộc, ví dụ `0312345678-001`.
+   - Cá nhân: bắt buộc họ tên. Mã số thuế không bắt buộc, gồm 10 chữ số hoặc 12 chữ số (số định danh cá nhân).
+   - Email nhận hóa đơn (bắt buộc) và tên người mua hàng (không bắt buộc với doanh nghiệp).
+2. **Yêu cầu hóa đơn:** trong *Lịch sử thanh toán*, bấm **Yêu cầu hóa đơn** ở đơn đã thanh toán. Đơn 0đ (giảm 100%) không cần xuất hóa đơn. Yêu cầu **lưu bản sao thông tin người mua** tại thời điểm gửi, nên sửa thông tin sau đó không làm thay đổi yêu cầu cũ. Mỗi đơn chỉ có một yêu cầu. Yêu cầu bị kế toán hủy có thể gửi lại sau khi sửa thông tin.
+3. **Tự động:** bật *Tự động gửi yêu cầu xuất hóa đơn* thì mỗi đơn vừa thanh toán (webhook, URL chuyển hướng về) sẽ tự tạo yêu cầu. Việc này nằm trong cùng giao dịch xác nhận thanh toán và chỉ chạy một lần cho mỗi đơn.
+4. **Kế toán** (super admin, tab **Hóa đơn VAT** trong `/app/admin`):
+   - Lọc theo trạng thái *Đang xử lý / Đã xuất / Đã hủy*.
+   - Xuất CSV (UTF-8 có BOM, mở được bằng Excel), gồm mã đơn, mã giao dịch, ngày thanh toán (giờ Việt Nam), số tiền, gói, số tháng và thông tin người mua.
+   - Bấm **Đã xuất** để nhập số hóa đơn, mã tra cứu và link tra cứu, hoặc **Hủy** kèm lý do. Cả hai đều gửi email tới địa chỉ nhận hóa đơn.
+   - Khách thấy trạng thái “Đang xử lý” hoặc “Đã xuất – số …” kèm link tra cứu.
+
+Thông tin xuất hóa đơn và các yêu cầu có trong tệp *Tải dữ liệu của tôi*. Chúng bị xóa cùng workspace.
+
+| Method | Đường dẫn | Mô tả |
+|---|---|---|
+| GET/PUT | `/api/workspaces/:id/billing-profile` | Thông tin xuất hóa đơn `{buyerType: company\|individual, companyName, taxCode, address, email, buyerName?, autoInvoice?}` (chủ sở hữu, quản trị viên) |
+| POST | `/api/orders/:id/invoice-request` | Gửi yêu cầu xuất hóa đơn cho đơn đã thanh toán (lưu bản sao thông tin); 409 nếu đơn đã có yêu cầu |
+| GET | `/api/admin/invoices[?status=pending\|issued\|cancelled&format=csv]` | Danh sách / xuất CSV yêu cầu hóa đơn (chỉ super admin) |
+| POST | `/api/admin/invoices/:id/issue` | Ghi nhận đã xuất `{invoiceNo, lookupCode?, lookupUrl?}` và gửi email cho khách |
+| POST | `/api/admin/invoices/:id/cancel` | Hủy yêu cầu `{reason}` và gửi email cho khách |
+
+## Hướng dẫn bắt đầu & email vòng đời khách hàng
+
+**Danh sách "Bắt đầu nhanh"** nằm đầu tab Website của dashboard, tính phía máy chủ (`GET /api/workspaces/:id/onboarding`) cho từng người dùng + workspace:
+
+1. Xác minh email · 2. Tạo website đầu tiên · 3. Xuất bản trang · 4. Nhận lead đầu tiên (không tính lead `spam`) · 5. Kết nối thông báo lead: ít nhất một kênh được cấu hình rõ trong Cài đặt website (email nhận thêm, webhook, Telegram, Slack, Discord, Google Sheets; email mặc định gửi cho chủ sở hữu không tính) · 6. Gắn tên miền riêng (tùy chọn, gói Pro trở lên, tính khi tên miền đã xác minh).
+
+Thẻ tự ẩn khi xong 5 bước bắt buộc. Bấm **Ẩn** để ẩn vĩnh viễn (lưu trong bảng `onboarding_dismissals` theo người dùng + workspace, `POST /api/workspaces/:id/onboarding/dismiss`).
+
+**Email vòng đời** do tiến trình nền (`src/jobs.js`, chạy mỗi giờ) gửi; logic nằm trong `src/lifecycle.js`:
+
+| Email | Loại | Khi nào |
+|---|---|---|
+| Chào mừng (3 mẹo bắt đầu + link `/app/`) | Giao dịch | Ngay sau khi đăng ký (lượt chạy hằng giờ gửi bù nếu bị lỡ trong 2 ngày). Tài khoản có trước bản cập nhật không nhận. |
+| Nhắc kích hoạt | Mẹo & nhắc nhở | 3 ngày sau đăng ký, nếu các workspace người dùng sở hữu chưa có trang nào được xuất bản. Chỉ gửi **một lần**, cho tài khoản 3–10 ngày tuổi. |
+| Tóm tắt lead hằng tuần | Tóm tắt lead | Sáng thứ Hai từ 08:00 giờ Việt Nam (UTC+7) cho chủ sở hữu và quản trị viên: lead tuần trước (thứ Hai–Chủ nhật) theo từng website, 3 nguồn lead hàng đầu (`utm_source` hoặc trang giới thiệu), tỷ lệ chuyển đổi so với tuần trước. Không tính lead `spam`; bỏ qua workspace không có lượt xem và lead. Mỗi workspace một lần/tuần (`workspaces.digest_week`). |
+
+- Người dùng bật/tắt hai loại email marketing trong **Cài đặt → Email** (`GET/PUT /api/auth/email-preferences` `{digest, tips}`). Email giao dịch (chào mừng, xác minh, mật khẩu, thanh toán) luôn được gửi.
+- Email marketing có link hủy nhận `GET /email/unsubscribe?token=…` (không cần đăng nhập) và header `List-Unsubscribe` / `List-Unsubscribe-Post` (hủy một chạm, RFC 8058). Token ký HMAC-SHA256 bằng khóa dẫn xuất từ `LEAD_SECRET`; sửa token hoặc tài khoản đã xóa → trang báo lỗi 400. Nên đặt `LEAD_SECRET` cố định ở production để link trong email cũ vẫn dùng được khi đổi khóa SMTP/thanh toán.
+- Không bao giờ gửi cho tài khoản bị tạm ngưng (`users.suspended_at`) hoặc đã xóa.
+- Lượt xem trang được thống kê theo ngày UTC, nên số lượt xem trong email tóm tắt lệch tối đa 7 giờ so với ranh giới tuần giờ Việt Nam (lead được tính chính xác theo giờ Việt Nam).
+
 ## Chất lượng lead & chống spam
 
 Mỗi lần gửi form đi qua các bước sau (`src/leadGuard.js`):
@@ -199,7 +279,8 @@ npx playwright show-report                    # xem báo cáo HTML (playwright-r
   - `editor.spec.js`: tạo website từ mẫu → mở trình thiết kế → sửa tiêu đề → lưu (“Đã lưu”) → tải ảnh qua Asset Manager → xuất bản → kiểm tra `/p/<tên-miền-phụ>`; tài khoản chưa xác minh không xuất bản được.
   - `leads.spec.js`: gửi form trên trang đã xuất bản kèm UTM → banner cảm ơn → lead hiện trong tab “Khách hàng tiềm năng” với nguồn → đổi trạng thái, lọc.
   - `billing.spec.js`: bảng giá, chặn tính năng Pro ở gói miễn phí, super-admin cấp gói Pro trong trang quản trị → tên miền riêng (hướng dẫn DNS) và A/B testing hoạt động. Thanh toán qua cổng thật không chạy ở đây (đã có test API với gateway giả trong `test/billing.test.js`).
-  - `a11y.spec.js`: trang chủ, đăng nhập, đăng ký, quên mật khẩu, bảng điều khiển (kể cả tab Cài đặt) và từng tab của trang website ở 375px: không lỗi console, không cuộn ngang, mọi ô nhập liệu đang hiển thị đều có nhãn/`aria-label`, có `lang="vi"`.
+  - `invoices.spec.js`: khách lưu thông tin xuất hóa đơn → gửi yêu cầu cho một đơn đã thanh toán (đơn được ghi thẳng vào SQLite của server e2e vì không có cổng thanh toán) → super admin ghi số hóa đơn trong tab “Hóa đơn VAT” → khách nhận email và thấy “Đã xuất – số …”.
+  - `a11y.spec.js`: trang chủ, đăng nhập, đăng ký, quên mật khẩu, bảng điều khiển (kể cả tab Gói dịch vụ với form thông tin xuất hóa đơn và tab Cài đặt) và từng tab của trang website ở 375px: không lỗi console, không cuộn ngang, mọi ô nhập liệu đang hiển thị đều có nhãn/`aria-label`, có `lang="vi"`.
 - Trên CI (job `e2e` trong `.github/workflows/ci.yml`) test được chạy lại 1 lần nếu lỗi, lưu trace ở lần chạy lại và tải lên artifact `playwright-report` (kèm `test-results/`, `e2e/server.log`) khi thất bại.
 
 ## Kiến trúc
@@ -214,6 +295,7 @@ src/
   access.js          Kiểm tra quyền và cách ly dữ liệu theo workspace
   plans.js           Định nghĩa gói, giới hạn, giá theo chu kỳ, hết hạn gói
   billing.js         Tạo đơn, xử lý webhook/return, kích hoạt và gia hạn gói
+  invoices.js        Thông tin xuất hóa đơn VAT, kiểm tra mã số thuế, lưu bản sao khi gửi yêu cầu
   payments/payos.js  Kết nối payOS (ký và xác thực HMAC-SHA256)
   payments/pay2s.js  Kết nối Pay2S (ký và xác thực m2signature)
   templates.js       Section và mẫu landing page
@@ -227,9 +309,11 @@ src/
   safety.js          Chấm điểm rủi ro lừa đảo, tạm ngưng website / tài khoản
   routes/safety.js   Form báo cáo vi phạm /_htc/report, API quản trị an toàn nội dung
   routes/abtests.js  A/B testing (chia lưu lượng, thống kê, chọn phiên bản thắng)
+  routes/invoices.js Yêu cầu xuất hóa đơn VAT (khách hàng) và xử lý, xuất CSV (super admin)
   http.js, usage.js  Tiện ích dùng chung (bọc handler, đếm mức sử dụng)
   siteSettings.js    Cài đặt tích hợp marketing và thông báo theo từng website
-  notify.js          Gửi thông báo lead (email / webhook / Telegram / Slack / Discord / Google Sheets)
+  notify.js          Gửi thông báo lead (email / webhook / Telegram / Slack / Discord / Google Sheets / Zalo OA)
+  zalo.js            Zalo OA: gửi tin tư vấn, tự làm mới và xoay vòng token
   domains.js         Xác minh tên miền riêng bằng DNS
   jobs.js            Nhắc gia hạn, dọn session và token hết hạn
   mailer.js          Gửi email qua SMTP
@@ -256,7 +340,10 @@ test/                Test API bằng node:test
 | GET/POST/DELETE | `/api/workspaces/:id/members[/:uid]` | Thành viên |
 | POST | `/api/workspaces/:id/checkout` | Tạo đơn thanh toán `{plan, months, provider, coupon?}`, trả về `checkoutUrl` (đơn giảm 100% trả về `paid: true`) |
 | POST | `/api/workspaces/:id/coupon/preview` | Xem giá với mã giảm giá `{coupon, plan, months}` → `{valid, listAmount, discount, amount, message}` |
-| GET | `/api/workspaces/:id/orders` | Lịch sử thanh toán |
+| GET | `/api/workspaces/:id/orders` | Lịch sử thanh toán (kèm trạng thái hóa đơn VAT `invoice`) |
+| GET/PUT | `/api/workspaces/:id/billing-profile` | Thông tin xuất hóa đơn VAT (xem [Hóa đơn VAT](#hóa-đơn-vat)) |
+| POST | `/api/orders/:id/invoice-request` | Yêu cầu xuất hóa đơn VAT cho đơn đã thanh toán |
+| GET/POST | `/api/admin/invoices`, `/api/admin/invoices/:id/issue`, `/cancel` | Xử lý yêu cầu hóa đơn VAT, xuất CSV (chỉ super admin) |
 | POST | `/api/billing/webhooks/payos`, `/api/billing/webhooks/pay2s` | Webhook / IPN từ cổng thanh toán |
 | GET | `/api/admin/stats`, `/api/admin/workspaces`, `/api/admin/orders` | Quản trị nền tảng |
 | POST | `/api/workspaces/:id/plan` | Cấp gói thủ công `{plan, months?}` (chỉ super admin) |
@@ -269,6 +356,7 @@ test/                Test API bằng node:test
 | POST | `/api/pages/:id/publish`, `/unpublish` | Xuất bản |
 | GET / PATCH | `/api/sites/:id/leads[?status=&q=&from=&to=&format=csv]`, `/api/leads/:id` | Lead: lọc (mặc định ẩn `spam`), xuất CSV, cập nhật trạng thái và ghi chú |
 | PATCH | `/api/sites/:id/settings` | Tích hợp marketing và thông báo |
+| POST | `/api/sites/:id/notify-test` | Gửi thông báo thử trên mọi kênh, hoặc một kênh `{channel: "zalo"}`; trả kết quả theo kênh |
 | POST | `/api/sites/:id/verify-domain` | Xác minh tên miền riêng |
 | GET/POST/DELETE | `/api/workspaces/:id/assets`, `/api/assets/:id` | Thư viện ảnh (body là ảnh thô, `Content-Type: image/*`) |
 | GET/POST | `/api/pages/:id/versions[/:vid/restore]`, `/api/pages/:id/duplicate` | Lịch sử phiên bản, nhân bản trang |
@@ -283,6 +371,9 @@ test/                Test API bằng node:test
 | GET/POST | `/api/auth/verify?token=`, `/api/auth/resend-verification` | Xác minh email (link trong email, gửi lại) |
 | GET/POST | `/api/auth/export`, `/api/auth/delete-account` | Tải dữ liệu cá nhân, xóa tài khoản `{password, confirm: "XOA TAI KHOAN"}` |
 | POST | `/api/workspaces/:id/transfer` | Chuyển quyền sở hữu `{userId}` (chỉ chủ sở hữu) |
+| GET/POST | `/api/workspaces/:id/onboarding`, `/onboarding/dismiss` | Danh sách bắt đầu nhanh `{steps: [{id, done, optional}], completed, total, allDone, dismissed, visible}`, ẩn danh sách |
+| GET/PUT | `/api/auth/email-preferences` | Tùy chọn email marketing `{digest, tips}` |
+| GET/POST | `/email/unsubscribe?token=` | Hủy nhận email marketing (link ký HMAC, không cần đăng nhập) |
 
 ## API công khai
 
@@ -318,7 +409,7 @@ curl -X POST -H "Authorization: Bearer $HTC_KEY" $HTC_URL/api/v1/pages/7/publish
 Hỗ trợ các quyền của chủ thể dữ liệu theo Nghị định 13/2023/NĐ-CP về bảo vệ dữ liệu cá nhân. Người dùng thao tác trong **Cài đặt** của dashboard:
 
 - **Xác minh email:** khi đăng ký, hệ thống gửi một liên kết dùng một lần, hiệu lực 24 giờ (token chỉ lưu dạng băm SHA-256). Chưa xác minh vẫn dùng được ứng dụng nhưng không xuất bản trang và không thanh toán được. Có thể gửi lại email, tối đa 3 lần/giờ. Nhận lời mời qua email cũng được tính là đã xác minh. Tài khoản tạo trước khi có tính năng này được coi là đã xác minh.
-- **Tải dữ liệu của tôi:** tệp JSON gồm hồ sơ, danh sách workspace tham gia và vai trò. Với workspace bạn sở hữu, tệp có thêm website, trang (HTML/CSS), lead và đơn hàng. Tệp không chứa mật khẩu băm, token, khóa tích hợp (như Telegram bot token) hay thông tin của thành viên khác.
+- **Tải dữ liệu của tôi:** tệp JSON gồm hồ sơ, danh sách workspace tham gia và vai trò. Với workspace bạn sở hữu, tệp có thêm website, trang (HTML/CSS), lead, đơn hàng, thông tin xuất hóa đơn và các yêu cầu hóa đơn VAT. Tệp không chứa mật khẩu băm, token, khóa tích hợp (như Telegram bot token) hay thông tin của thành viên khác.
 - **Xóa tài khoản:** cần nhập mật khẩu và gõ `XOA TAI KHOAN`. Hệ thống xóa vĩnh viễn tài khoản, session và các workspace bạn sở hữu (kèm website, trang, lead, đơn hàng), sau đó gửi email xác nhận. Nếu bạn còn sở hữu workspace có thành viên khác thì phải chuyển quyền sở hữu hoặc xóa các thành viên trước.
 - **Chuyển quyền sở hữu:** chủ sở hữu chuyển workspace cho một quản trị viên hoặc biên tập viên hiện có (tab **Thành viên**). Chủ sở hữu cũ trở thành quản trị viên.
 
@@ -397,8 +488,7 @@ Giao diện: `/app/admin` → tab **An toàn nội dung** (trang bị gắn cờ
 
 ## Lộ trình tiếp theo
 
-- Xuất hóa đơn VAT điện tử sau khi thanh toán.
-- Gửi thông báo lead qua Zalo OA.
+- Tích hợp API nhà cung cấp hóa đơn điện tử (MISA/VNPT/Viettel) để tự phát hành hóa đơn VAT (hiện kế toán xuất thủ công, xem [Hóa đơn VAT](#hóa-đơn-vat)).
 - Chuyển sang PostgreSQL khi mở rộng nhiều instance.
 
 ## Giấy phép mã nguồn bên thứ ba

@@ -46,7 +46,20 @@
     </div>
   </div>
 
-  <section data-panel="sites"><div class="grid" id="sites"></div></section>
+  <section data-panel="sites">
+    <section class="card onboarding" id="onboarding" aria-labelledby="onb-title" hidden>
+      <div class="row">
+        <div>
+          <h2 id="onb-title">Bắt đầu nhanh</h2>
+          <span class="muted" id="onb-progress-text"></span>
+        </div>
+        <button class="btn btn-ghost btn-sm" type="button" id="onb-dismiss" aria-label="Ẩn danh sách bắt đầu nhanh">Ẩn</button>
+      </div>
+      <progress id="onb-progress" max="5" value="0" aria-labelledby="onb-progress-text"></progress>
+      <ol class="checklist" id="onb-steps" style="margin-top:12px"></ol>
+    </section>
+    <div class="grid" id="sites"></div>
+  </section>
 
   <section data-panel="members" hidden>
     <div class="card stack">
@@ -84,9 +97,28 @@
         <span class="muted" id="coupon-msg" role="status"></span>
       </form>
       <div class="grid" id="plans"></div>
+      <form class="card" id="invoice-profile-form" hidden>
+        <h3 style="margin:0">Thông tin xuất hóa đơn</h3>
+        <p class="hint" style="margin:4px 0 0">Dùng để xuất hóa đơn GTGT điện tử cho các đơn đã thanh toán. Mỗi yêu cầu lưu lại thông tin tại thời điểm gửi, nên chỉnh sửa sau đó không ảnh hưởng đến yêu cầu cũ.</p>
+        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0 16px">
+          <div><label for="bp-type">Loại người mua</label>
+            <select id="bp-type" name="buyerType"><option value="company">Doanh nghiệp / tổ chức</option><option value="individual">Cá nhân</option></select></div>
+          <div id="bp-company-wrap"><label for="bp-company">Tên đơn vị</label><input id="bp-company" name="companyName" maxlength="300"></div>
+          <div><label for="bp-tax" id="bp-tax-label">Mã số thuế</label><input id="bp-tax" name="taxCode" maxlength="20" inputmode="numeric" autocomplete="off"></div>
+          <div><label for="bp-name" id="bp-name-label">Người mua hàng</label><input id="bp-name" name="buyerName" maxlength="100" autocomplete="name"></div>
+          <div><label for="bp-email">Email nhận hóa đơn</label><input id="bp-email" name="email" type="email" maxlength="200" autocomplete="email" required></div>
+        </div>
+        <label for="bp-address" id="bp-address-label">Địa chỉ</label><input id="bp-address" name="address" maxlength="300" autocomplete="street-address">
+        <div class="hint" id="bp-hint"></div>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input id="bp-auto" name="autoInvoice" type="checkbox" style="width:auto;margin-top:4px">
+          <span>Tự động gửi yêu cầu xuất hóa đơn mỗi khi thanh toán thành công</span></label>
+        <div class="row" style="justify-content:flex-start;margin-top:12px">
+          <button class="btn" type="submit">Lưu thông tin</button><span class="muted" id="bp-msg" role="status"></span>
+        </div>
+      </form>
       <div class="card">
         <h3 style="margin-top:0">Lịch sử thanh toán</h3>
-        <div class="table-wrap"><table><thead><tr><th>Mã</th><th>Gói</th><th>Số tiền</th><th>Cổng</th><th>Trạng thái</th><th>Thời gian</th></tr></thead><tbody id="orders"></tbody></table></div>
+        <div class="table-wrap"><table><thead><tr><th>Mã</th><th>Gói</th><th>Số tiền</th><th>Cổng</th><th>Trạng thái</th><th>Thời gian</th><th>Hóa đơn VAT</th></tr></thead><tbody id="orders"></tbody></table></div>
       </div>
     </div>
   </section>
@@ -114,6 +146,22 @@
         <div class="row"><input id="ws-new" name="name" style="flex:1" required><button class="btn btn-ghost" type="submit">Tạo</button></div>
       </form>
     </div>
+    <form class="card stack" id="email-prefs-form" style="margin-top:16px">
+      <div>
+        <h3 style="margin:0">Email</h3>
+        <span class="muted">Chọn email bạn muốn nhận. Email giao dịch (xác minh, đặt lại mật khẩu, thanh toán) luôn được gửi.</span>
+      </div>
+      <div>
+        <label class="consent" for="pref-digest"><input type="checkbox" id="pref-digest" name="digest">
+          <span><strong>Tóm tắt lead hằng tuần</strong><span class="hint" style="display:block;margin:0">Sáng thứ Hai: lead, lượt xem và tỷ lệ chuyển đổi tuần trước của các workspace bạn sở hữu hoặc quản trị.</span></span></label>
+        <label class="consent" for="pref-tips"><input type="checkbox" id="pref-tips" name="tips">
+          <span><strong>Mẹo &amp; nhắc nhở</strong><span class="hint" style="display:block;margin:0">Hướng dẫn và nhắc nhở giúp bạn xuất bản trang và nhận lead.</span></span></label>
+      </div>
+      <div class="row" style="justify-content:flex-start">
+        <button class="btn btn-ghost" type="submit">Lưu tùy chọn email</button>
+        <span class="muted" id="email-prefs-msg" role="status"></span>
+      </div>
+    </form>
     <div class="card stack" id="api-keys-card" style="margin-top:16px" hidden>
       <div>
         <h3 style="margin:0">API keys</h3>
@@ -142,7 +190,7 @@
       </div>
       <div>
         <a class="btn btn-ghost" href="/api/auth/export" download>Tải dữ liệu của tôi</a>
-        <div class="hint">Tệp JSON gồm hồ sơ, các workspace bạn tham gia và toàn bộ website, trang, lead, đơn hàng của workspace bạn sở hữu.</div>
+        <div class="hint">Tệp JSON gồm hồ sơ, các workspace bạn tham gia và toàn bộ website, trang, lead, đơn hàng, thông tin xuất hóa đơn của workspace bạn sở hữu.</div>
       </div>
       <form id="delete-account-form">
         <label>Xóa tài khoản</label>
@@ -180,7 +228,7 @@
 const { api, esc, $, formData, slugify, formatVnd, limit } = HTC;
 const ROLE_LABEL = { owner: 'Chủ sở hữu', admin: 'Quản trị viên', editor: 'Biên tập viên' };
 const ORDER_STATUS = { pending: ['Chờ thanh toán', ''], paid: ['Đã thanh toán', 'badge-success'], cancelled: ['Đã hủy', ''], failed: ['Lỗi', 'badge-danger'] };
-let me, ws, plans = [], providers = [];
+let me, ws, plans = [], providers = [], billingProfile = null;
 // Applied coupon: code plus a preview per paid plan for the selected cycle.
 let coupon = { code: '', quotes: {} };
 const params = new URLSearchParams(location.search);
@@ -199,6 +247,7 @@ async function load() {
   $('#profile-name').value = me.user.name;
   $('#verify-banner').hidden = me.user.emailVerified;
   $('#verify-email').textContent = me.user.email;
+  loadEmailPrefs().catch(showError);
   const current = HTC.currentWorkspace(me.workspaces);
   $('#ws-select').innerHTML = me.workspaces
     .map((w) => `<option value="${w.id}" ${w.id === current.id ? 'selected' : ''}>${esc(w.name)}</option>`)
@@ -218,7 +267,107 @@ async function loadWorkspace(id) {
     ['Thành viên', ws.usage.members, p.maxMembers],
     ['Lead tháng này', ws.usage.leadsThisMonth, p.maxLeadsPerMonth],
   ].map(([label, used, max]) => `<div class="card"><span class="muted">${label}</span><strong>${used} / ${limit(max)}</strong></div>`).join('');
-  await Promise.all([loadSites(), loadMembers(), loadPlans(), loadOrders(), loadApiKeys()]);
+  await Promise.all([loadSites(), loadOnboarding(), loadMembers(), loadPlans(), loadOrders(), loadApiKeys(), loadBillingProfile()]);
+}
+
+// ----- VAT invoice details (owner/admin) -----
+async function loadBillingProfile() {
+  const canManage = ws.role === 'owner' || ws.role === 'admin';
+  $('#invoice-profile-form').hidden = !canManage;
+  billingProfile = null;
+  if (!canManage) return;
+  billingProfile = (await api(`/workspaces/${ws.id}/billing-profile`)).profile;
+  const p = billingProfile || { buyerType: 'company', companyName: '', taxCode: '', address: '', email: me.user.email, buyerName: '', autoInvoice: false };
+  $('#bp-type').value = p.buyerType;
+  $('#bp-company').value = p.companyName;
+  $('#bp-tax').value = p.taxCode;
+  $('#bp-name').value = p.buyerName;
+  $('#bp-email').value = p.email;
+  $('#bp-address').value = p.address;
+  $('#bp-auto').checked = p.autoInvoice;
+  $('#bp-msg').textContent = '';
+  syncBuyerType();
+}
+
+function syncBuyerType() {
+  const company = $('#bp-type').value === 'company';
+  $('#bp-company-wrap').hidden = !company;
+  $('#bp-company').required = company;
+  $('#bp-tax').required = company;
+  $('#bp-address').required = company;
+  $('#bp-name').required = !company;
+  $('#bp-tax').pattern = company ? '\\d{10}(-\\d{3})?' : '\\d{10}(-\\d{3})?|\\d{12}';
+  $('#bp-tax').placeholder = company ? '0312345678 hoặc 0312345678-001' : 'Không bắt buộc';
+  $('#bp-tax-label').textContent = company ? 'Mã số thuế' : 'Mã số thuế cá nhân (không bắt buộc)';
+  $('#bp-name-label').textContent = company ? 'Người mua hàng (không bắt buộc)' : 'Họ tên người mua';
+  $('#bp-address-label').textContent = company ? 'Địa chỉ đơn vị (theo đăng ký thuế)' : 'Địa chỉ (không bắt buộc)';
+  $('#bp-hint').textContent = company
+    ? 'Mã số thuế gồm 10 chữ số; đơn vị phụ thuộc/chi nhánh dùng 10 chữ số kèm "-" và 3 chữ số.'
+    : 'Mã số thuế cá nhân gồm 10 chữ số hoặc 12 chữ số (số định danh cá nhân).';
+}
+
+function invoiceCell(o) {
+  const canManage = ws.role === 'owner' || ws.role === 'admin';
+  const inv = o.invoice;
+  const requestBtn = (label) => (canManage ? `<button class="btn btn-ghost btn-sm" data-invoice="${o.id}">${label}</button>` : '');
+  if (!inv) return o.status === 'paid' && o.amount > 0 ? requestBtn('Yêu cầu hóa đơn') : '';
+  if (inv.status === 'issued') {
+    return `<span class="badge badge-success">Đã xuất – số ${esc(inv.invoiceNo)}</span>`
+      + (inv.lookupCode ? `<div class="hint">Mã tra cứu: <code>${esc(inv.lookupCode)}</code></div>` : '')
+      + (inv.lookupUrl ? `<div><a href="${esc(inv.lookupUrl)}" target="_blank" rel="noopener noreferrer">Tra cứu hóa đơn</a></div>` : '');
+  }
+  if (inv.status === 'cancelled') {
+    return `<span class="badge badge-danger">Đã hủy</span>${inv.cancelReason ? `<div class="hint">${esc(inv.cancelReason)}</div>` : ''}${requestBtn('Gửi lại yêu cầu')}`;
+  }
+  return '<span class="badge badge-primary">Đang xử lý</span>';
+}
+
+// ----- onboarding checklist (steps computed by the server) -----
+const ONB_STEPS = {
+  verify_email: ['Xác minh email', 'Bấm liên kết trong email xác minh để có thể xuất bản trang.'],
+  create_site: ['Tạo website đầu tiên', 'Chọn một mẫu có sẵn rồi chỉnh sửa bằng kéo thả.'],
+  publish_page: ['Xuất bản trang', 'Mở website và bấm “Xuất bản” để trang lên mạng.'],
+  first_lead: ['Nhận lead đầu tiên', 'Chia sẻ đường dẫn trang để khách hàng để lại thông tin.'],
+  lead_notify: ['Kết nối thông báo lead (email/Telegram/…)', 'Thêm email, Telegram, Slack, Discord, webhook hoặc Google Sheets trong Cài đặt website.'],
+  custom_domain: ['Gắn tên miền riêng', 'Dùng tên miền của bạn thay cho tên miền phụ.'],
+};
+
+function onboardingAction(step, siteId) {
+  if (step.done) return '';
+  const siteLink = (label, tab) => (siteId ? `<a class="btn btn-ghost btn-sm" href="/app/site?id=${siteId}${tab ? `&tab=${tab}` : ''}">${label}</a>` : '');
+  switch (step.id) {
+    case 'verify_email': return '<button class="btn btn-ghost btn-sm" type="button" data-onb="resend">Gửi lại email</button>';
+    case 'create_site': return '<button class="btn btn-sm" type="button" data-onb="create">Tạo ngay</button>';
+    case 'publish_page': return siteLink('Mở website');
+    case 'lead_notify': return siteLink('Thiết lập thông báo', 'settings');
+    case 'custom_domain': return step.available ? siteLink('Gắn tên miền', 'settings') : '<button class="btn btn-ghost btn-sm" type="button" data-onb="upgrade">Xem gói Pro</button>';
+    default: return '';
+  }
+}
+
+async function loadOnboarding() {
+  const o = await api(`/workspaces/${ws.id}/onboarding`);
+  $('#onboarding').hidden = !o.visible;
+  if (!o.visible) return;
+  $('#onb-progress-text').textContent = `Đã hoàn thành ${o.completed}/${o.total} bước`;
+  $('#onb-progress').max = o.total;
+  $('#onb-progress').value = o.completed;
+  $('#onb-steps').innerHTML = o.steps.map((s) => {
+    const [title, hint] = ONB_STEPS[s.id] || [s.id, ''];
+    const note = s.optional ? (s.available === false ? 'Tùy chọn, có ở gói Pro trở lên. ' : 'Tùy chọn. ') : '';
+    const action = onboardingAction(s, o.firstSiteId);
+    return `<li class="${s.done ? 'done' : ''}">
+      <span class="check" aria-hidden="true">${s.done ? '✓' : ''}</span>
+      <div class="step-body"><span class="step-title">${esc(title)}</span><span class="sr-only">${s.done ? ' (đã hoàn thành)' : ' (chưa hoàn thành)'}</span>
+        <div class="hint">${esc(note + hint)}</div></div>
+      ${action ? `<div class="step-action">${action}</div>` : ''}</li>`;
+  }).join('');
+}
+
+async function loadEmailPrefs() {
+  const p = await api('/auth/email-preferences');
+  $('#pref-digest').checked = p.digest;
+  $('#pref-tips').checked = p.tips;
 }
 
 async function loadApiKeys() {
@@ -354,9 +503,9 @@ async function loadOrders() {
       return `<tr><td>#${o.id}</td><td>${esc(planName(o.plan))} · ${o.months} tháng</td><td>${o.amount.toLocaleString('vi-VN')}đ${discount}</td>
         <td>${o.provider === 'coupon' ? 'Mã giảm giá' : esc(o.provider)}</td><td><span class="badge ${cls}">${label}</span>
         ${o.checkout_url ? ` <a href="${esc(o.checkout_url)}">Tiếp tục thanh toán</a>` : ''}</td>
-        <td>${esc(o.paid_at || o.created_at)}</td></tr>`;
+        <td>${esc(o.paid_at || o.created_at)}</td><td>${invoiceCell(o)}</td></tr>`;
     }).join('')
-    : '<tr><td colspan="6" class="muted">Chưa có giao dịch.</td></tr>';
+    : '<tr><td colspan="7" class="muted">Chưa có giao dịch.</td></tr>';
 
   const orderId = Number(params.get('order'));
   const o = orders.find((x) => x.id === orderId);
@@ -372,6 +521,36 @@ async function loadOrders() {
 
 // ----- events -----
 $('#logout').onclick = HTC.logout;
+
+$('#onb-dismiss').onclick = async () => {
+  showError();
+  try {
+    await api(`/workspaces/${ws.id}/onboarding/dismiss`, { method: 'POST', body: {} });
+    $('#onboarding').hidden = true;
+    $('#new-site-btn').focus();
+  } catch (err) { showError(err); }
+};
+
+$('#onb-steps').onclick = (e) => {
+  const btn = e.target.closest('[data-onb]');
+  const action = btn?.dataset.onb;
+  if (action === 'create') $('#new-site-btn').click();
+  else if (action === 'resend') {
+    btn.disabled = true;
+    $('#verify-resend').click();
+  }
+  else if (action === 'upgrade') selectTab('billing');
+};
+
+$('#email-prefs-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  $('#email-prefs-msg').textContent = '';
+  try {
+    await api('/auth/email-preferences', { method: 'PUT', body: { digest: $('#pref-digest').checked, tips: $('#pref-tips').checked } });
+    $('#email-prefs-msg').textContent = 'Đã lưu tùy chọn email.';
+  } catch (err) { showError(err); }
+};
 $('#ws-select').onchange = (e) => loadWorkspace(Number(e.target.value)).catch(showError);
 
 document.querySelectorAll('.tabs button').forEach((btn) => { btn.onclick = () => selectTab(btn.dataset.tab); });
@@ -387,6 +566,36 @@ $('#coupon-clear').onclick = () => {
   coupon.code = '';
   $('#coupon').value = '';
   previewCoupon().catch(showError);
+};
+
+$('#bp-type').onchange = syncBuyerType;
+$('#invoice-profile-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  const body = { ...formData(e.target), autoInvoice: $('#bp-auto').checked };
+  try {
+    billingProfile = (await api(`/workspaces/${ws.id}/billing-profile`, { method: 'PUT', body })).profile;
+    $('#bp-msg').textContent = 'Đã lưu thông tin xuất hóa đơn.';
+  } catch (err) { showError(err); $('#bp-msg').textContent = ''; }
+};
+
+$('#orders').onclick = async (e) => {
+  const btn = e.target.closest('button[data-invoice]');
+  if (!btn) return;
+  showError();
+  const p = billingProfile;
+  if (!p) {
+    showError(new Error('Vui lòng điền và lưu "Thông tin xuất hóa đơn" trước khi gửi yêu cầu.'));
+    $('#bp-type').focus();
+    return;
+  }
+  const buyer = p.buyerType === 'company' ? `${p.companyName} (MST ${p.taxCode})` : p.buyerName;
+  if (!confirm(`Gửi yêu cầu xuất hóa đơn GTGT cho đơn #${btn.dataset.invoice}?\nNgười mua: ${buyer}\nEmail nhận hóa đơn: ${p.email}`)) return;
+  btn.disabled = true;
+  try {
+    await api(`/orders/${btn.dataset.invoice}/invoice-request`, { method: 'POST', body: {} });
+    await loadOrders();
+  } catch (err) { showError(err); btn.disabled = false; }
 };
 
 $('#member-form').onsubmit = async (e) => {

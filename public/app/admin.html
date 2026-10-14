@@ -27,6 +27,7 @@
     <button data-tab="orders">Giao dịch</button>
     <button data-tab="coupons">Mã giảm giá</button>
     <button data-tab="safety">An toàn nội dung <span class="badge badge-danger" id="safety-count" hidden></span></button>
+    <button data-tab="invoices">Hóa đơn VAT <span class="badge badge-primary" id="invoice-count" hidden></span></button>
   </div>
 
   <section data-panel="workspaces">
@@ -92,6 +93,24 @@
     <div class="table-wrap"><table>
       <thead><tr><th>Loại</th><th>Đối tượng</th><th>Lý do</th><th>Từ</th><th></th></tr></thead>
       <tbody id="suspended"></tbody>
+    </table></div>
+  </section>
+
+  <section data-panel="invoices" hidden>
+    <div class="alert" id="invoice-error"></div>
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <h2 style="margin:8px 0">Yêu cầu xuất hóa đơn VAT</h2>
+      <div class="row" style="justify-content:flex-start;gap:8px">
+        <select id="invoice-status" aria-label="Lọc yêu cầu hóa đơn" style="width:auto">
+          <option value="pending">Đang xử lý</option><option value="issued">Đã xuất</option><option value="cancelled">Đã hủy</option><option value="">Tất cả</option>
+        </select>
+        <a class="btn btn-ghost btn-sm" id="invoice-csv" href="/api/admin/invoices?status=pending&amp;format=csv" download>Xuất CSV</a>
+      </div>
+    </div>
+    <p class="hint">Xuất hóa đơn GTGT điện tử trên phần mềm hóa đơn (MISA meInvoice, VNPT, Viettel S-Invoice…) theo thông tin bên dưới, sau đó bấm “Đã xuất” để ghi lại số hóa đơn và mã tra cứu; khách hàng nhận email thông báo. Thông tin người mua là bản lưu tại thời điểm gửi yêu cầu.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>#</th><th>Đơn hàng</th><th>Người mua</th><th>Email nhận</th><th>Yêu cầu lúc</th><th>Trạng thái</th><th></th></tr></thead>
+      <tbody id="invoices"></tbody>
     </table></div>
   </section>
 </main>
@@ -305,6 +324,70 @@ load().catch(showError);
   $('#flag-status').onchange = () => loadSafety().catch(fail);
   $('#report-status').onchange = () => loadSafety().catch(fail);
   loadSafety().catch(fail);
+})();
+</script>
+<script>
+// VAT invoice requests: issued manually in the e-invoice software, recorded here.
+(() => {
+  const { api, esc, $ } = HTC;
+  const STATUS = { pending: ['Đang xử lý', 'badge-primary'], issued: ['Đã xuất', 'badge-success'], cancelled: ['Đã hủy', 'badge-danger'] };
+  const vnd = (n) => `${Number(n).toLocaleString('vi-VN')}đ`;
+  const when = (s) => (s ? new Date(`${s.replace(' ', 'T')}Z`).toLocaleString('vi-VN') : '—');
+  const fail = (err) => { $('#invoice-error').textContent = err ? err.message : ''; };
+
+  async function loadInvoices() {
+    fail(null);
+    const status = $('#invoice-status').value;
+    const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+    const [rows, pending] = await Promise.all([api(`/admin/invoices${qs}`), status === 'pending' ? null : api('/admin/invoices?status=pending')]);
+    const count = (pending || rows).length;
+    $('#invoice-count').textContent = count;
+    $('#invoice-count').hidden = !count;
+    $('#invoice-csv').href = `/api/admin/invoices?${status ? `status=${encodeURIComponent(status)}&` : ''}format=csv`;
+    $('#invoices').innerHTML = rows.map((x) => {
+      const [label, cls] = STATUS[x.status];
+      const buyer = x.buyer_type === 'company'
+        ? `<strong>${esc(x.company_name)}</strong><div>MST: <code>${esc(x.tax_code)}</code></div>${x.buyer_name ? `<div class="hint">Người mua: ${esc(x.buyer_name)}</div>` : ''}`
+        : `<strong>${esc(x.buyer_name)}</strong> <span class="hint">(cá nhân)</span>${x.tax_code ? `<div>MST: <code>${esc(x.tax_code)}</code></div>` : ''}`;
+      const detail = x.status === 'issued'
+        ? `<div class="hint">Số ${esc(x.invoice_no)}${x.lookup_code ? ` · mã tra cứu ${esc(x.lookup_code)}` : ''}</div>${x.lookup_url ? `<a href="${esc(x.lookup_url)}" target="_blank" rel="noopener noreferrer">Tra cứu</a>` : ''}`
+        : x.status === 'cancelled' ? `<div class="hint">${esc(x.cancel_reason || '')}</div>` : '';
+      const actions = x.status === 'pending'
+        ? `<button class="btn btn-sm" data-issue="${x.id}">Đã xuất</button> <button class="btn btn-ghost btn-sm" data-cancel="${x.id}">Hủy</button>`
+        : '';
+      return `<tr><td>${x.id}</td>
+        <td>#${x.order_id} · ${esc(x.plan)} ${x.months}th<div><strong>${vnd(x.amount)}</strong></div><div class="hint">${esc(x.workspace_name || '')} · TT ${when(x.paid_at)}</div></td>
+        <td style="min-width:200px">${buyer}${x.address ? `<div class="hint">${esc(x.address)}</div>` : ''}</td>
+        <td>${esc(x.email)}</td>
+        <td>${when(x.created_at)}${x.auto ? '<div class="hint">Tự động</div>' : x.requested_by_email ? `<div class="hint">${esc(x.requested_by_email)}</div>` : ''}</td>
+        <td><span class="badge ${cls}">${label}</span>${detail}</td>
+        <td style="white-space:nowrap">${actions}</td></tr>`;
+    }).join('') || '<tr><td colspan="7" class="muted">Không có yêu cầu nào.</td></tr>';
+  }
+
+  $('#invoices').onclick = async (e) => {
+    const { issue, cancel } = e.target.dataset;
+    if (!issue && !cancel) return;
+    fail(null);
+    try {
+      if (issue) {
+        const invoiceNo = prompt('Số hóa đơn (theo phần mềm hóa đơn điện tử):');
+        if (!invoiceNo || !invoiceNo.trim()) return;
+        const lookupCode = prompt('Mã tra cứu (không bắt buộc):', '');
+        if (lookupCode === null) return;
+        const lookupUrl = prompt('Link tra cứu hóa đơn (không bắt buộc, https://…):', '');
+        if (lookupUrl === null) return;
+        await api(`/admin/invoices/${issue}/issue`, { method: 'POST', body: { invoiceNo, lookupCode, lookupUrl } });
+      } else {
+        const reason = prompt('Lý do hủy yêu cầu (gửi tới email nhận hóa đơn):', 'Thông tin mã số thuế không hợp lệ');
+        if (!reason || !reason.trim()) return;
+        await api(`/admin/invoices/${cancel}/cancel`, { method: 'POST', body: { reason } });
+      }
+      await loadInvoices();
+    } catch (err) { fail(err); }
+  };
+  $('#invoice-status').onchange = () => loadInvoices().catch(fail);
+  loadInvoices().catch(fail);
 })();
 </script>
 </body>

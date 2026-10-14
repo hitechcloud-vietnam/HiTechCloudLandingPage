@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const { HttpError } = require('./access');
+const { MAX_RECIPIENTS: MAX_ZALO_RECIPIENTS, USER_ID_RE: ZALO_USER_ID_RE } = require('./zalo');
 
 // Per-site marketing and notification settings, stored as JSON on sites.settings_json.
 // Every tracking ID is validated against a strict pattern because it is
@@ -18,6 +19,8 @@ const FIELDS = {
   slackWebhookUrl: { re: /^https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/_-]+$/, label: 'Slack webhook URL (https://hooks.slack.com/services/…)', secret: 'hasSlackWebhook' },
   discordWebhookUrl: { re: /^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+$/, label: 'Discord webhook URL (https://discord.com/api/webhooks/…)', secret: 'hasDiscordWebhook' },
   sheetsWebhookUrl: { re: /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/, label: 'Google Sheets (Apps Script) URL (https://script.google.com/macros/s/…/exec)', secret: 'hasSheetsWebhook' },
+  // Zalo OA refresh tokens are long opaque strings; the live (rotated) pair is kept in zalo_tokens.
+  zaloRefreshToken: { re: /^[A-Za-z0-9._-]{20,1000}$/, max: 1000, label: 'Zalo OA refresh token', secret: 'hasZaloRefreshToken' },
   turnstileSiteKey: { re: /^[0-9A-Za-z_-]{10,100}$/, label: 'Cloudflare Turnstile site key' },
   turnstileSecret: { re: /^[0-9A-Za-z_-]{10,100}$/, label: 'Cloudflare Turnstile secret key', secret: 'hasTurnstileSecret' },
 };
@@ -56,7 +59,7 @@ function applyUpdate(current, input, plan) {
       delete next[key];
       continue;
     }
-    if (value.length > MAX_FIELD || !def.re.test(value)) throw new HttpError(400, `${def.label} không hợp lệ`);
+    if (value.length > (def.max || MAX_FIELD) || !def.re.test(value)) throw new HttpError(400, `${def.label} không hợp lệ`);
     next[key] = value;
   }
 
@@ -68,6 +71,14 @@ function applyUpdate(current, input, plan) {
     if (emails.length > 5) throw new HttpError(400, 'Tối đa 5 email nhận thông báo');
     for (const e of emails) if (!EMAIL_RE.test(e)) throw new HttpError(400, `Email không hợp lệ: ${e}`);
     next.notifyEmails = emails;
+  }
+  if (input.zaloUserIds !== undefined) {
+    // Zalo user IDs exceed Number precision: always kept as strings.
+    const ids = [...new Set(String(input.zaloUserIds ?? '').split(/[\s,;]+/).filter(Boolean))];
+    if (ids.length > MAX_ZALO_RECIPIENTS) throw new HttpError(400, `Tối đa ${MAX_ZALO_RECIPIENTS} người nhận Zalo`);
+    for (const id of ids) if (!ZALO_USER_ID_RE.test(id)) throw new HttpError(400, `Zalo user ID không hợp lệ: ${id.slice(0, 40)}`);
+    if (ids.length) next.zaloUserIds = ids;
+    else delete next.zaloUserIds;
   }
   if (input.notifyOwners !== undefined) next.notifyOwners = !!input.notifyOwners;
 
@@ -94,6 +105,18 @@ function applyUpdate(current, input, plan) {
 
   if (next.webhookUrl && !next.webhookSecret) next.webhookSecret = crypto.randomBytes(24).toString('hex');
   return next;
+}
+
+// True when lead notifications were set up explicitly (owner emails are the default).
+function hasNotifyChannel(s) {
+  return !!(
+    (s.notifyEmails && s.notifyEmails.length) ||
+    s.webhookUrl ||
+    (s.telegramBotToken && s.telegramChatId) ||
+    s.slackWebhookUrl ||
+    s.discordWebhookUrl ||
+    s.sheetsWebhookUrl
+  );
 }
 
 // Tracking snippets injected into <head> of published pages.
@@ -123,4 +146,4 @@ function leadEvents(s) {
   return calls.length ? `<script>${calls.join('')}</script>` : '';
 }
 
-module.exports = { FIELDS, parse, publicSettings, applyUpdate, trackingHead, leadEvents };
+module.exports = { FIELDS, parse, publicSettings, applyUpdate, hasNotifyChannel, trackingHead, leadEvents };
