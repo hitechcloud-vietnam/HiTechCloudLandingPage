@@ -51,5 +51,5 @@ Kế hoạch và trạng thái công việc. Mỗi việc chưa xong có một f
 - An toàn nội dung: báo cáo vi phạm, phát hiện trang lừa đảo, tạm ngưng website/tài khoản (HTTP 451).
 - Hướng dẫn bắt đầu nhanh, email vòng đời (chào mừng, nhắc kích hoạt, tóm tắt lead hằng tuần, hủy nhận).
 - Vận hành: log JSON có request id, `/healthz`, `/readyz`, `/metrics` (Prometheus), cảnh báo lỗi qua webhook, sao lưu SQLite trực tuyến, lưu ảnh S3.
-- Kiểm thử: 231 test đơn vị/API, 23 test E2E (desktop + mobile, kiểm tra a11y và hiển thị 375px); CI xanh.
-- Tài liệu triển khai chi tiết: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+- Kiểm thử: 233 test đơn vị/API, 23 test E2E (desktop + mobile, kiểm tra a11y và hiển thị 375px), kiểm thử triển khai trên stack app + Caddy thật (`deploy/test-stack.sh`); CI xanh.
+- Tài liệu triển khai chi tiết: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), bộ công cụ `deploy/*.sh`, runbook sự cố [docs/RUNBOOK.md](docs/RUNBOOK.md).

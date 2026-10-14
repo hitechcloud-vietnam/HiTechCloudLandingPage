@@ -2,10 +2,53 @@
 
 Tài liệu này mô tả từng bước đưa HiTechCloud LandingPage lên môi trường production: chuẩn bị máy chủ và tên miền, cấu hình, khởi chạy, các bước sau khi khởi chạy, sao lưu, cập nhật phiên bản, giám sát và xử lý sự cố.
 
-Cách triển khai khuyến nghị là **Docker Compose + Caddy** (mục 4–7). Cách chạy trực tiếp bằng Node.js + systemd nằm ở mục 15.
+Cách triển khai khuyến nghị là **Docker Compose + Caddy** (mục 4–7). Cách chạy trực tiếp bằng Node.js + systemd nằm ở mục 15. Xử lý sự cố từng bước: [docs/RUNBOOK.md](RUNBOOK.md).
+
+## Cài đặt nhanh
+
+Bộ công cụ trong [`deploy/`](../deploy/) làm thay các bước thủ công của tài liệu này; mỗi script có `--help`. Trên máy chủ Ubuntu 22.04/24.04 mới, sau khi đã trỏ DNS (mục 3):
+
+```bash
+# 1. Chuẩn bị máy chủ (root): cập nhật, Docker, tường lửa, swap, giới hạn log, múi giờ,
+#    thư mục sao lưu /var/backups/hitechcloud thuộc người dùng vận hành "deploy" (mục 4.2)
+sudo apt-get install -y git
+sudo git clone https://github.com/hitechcloud-vietnam/HiTechCloudLandingPage.git /opt/hitechcloud
+sudo /opt/hitechcloud/deploy/setup-server.sh --user deploy          # thêm --dry-run để xem trước
+# (đăng nhập lại bằng người dùng deploy để nhận nhóm docker)
+sudo chown -R deploy:deploy /opt/hitechcloud && cd /opt/hitechcloud
+
+# 2. Tạo .env với khóa bí mật ngẫu nhiên, rồi điền SMTP_URL và khóa thanh toán
+deploy/init-env.sh --app-domain app.hitechcloud.vn --publish-domain hitechcloud.site --admin-email admin@congty.vn
+nano .env
+
+# 3. Kiểm tra cấu hình, DNS, cổng, tài nguyên
+deploy/preflight.sh
+
+# 4. Khởi chạy (build từ mã nguồn) — hoặc dùng image dựng sẵn: deploy/update.sh --image v1.0.0
+docker compose up -d --build
+
+# 5. Kiểm tra từ bên ngoài
+deploy/smoke-test.sh
+
+# 6. Sao lưu hằng ngày lúc 02:30 (crontab của người dùng deploy)
+( crontab -l 2>/dev/null; echo '30 2 * * * /opt/hitechcloud/deploy/backup.sh >> /var/log/hitechcloud-backup.log 2>&1' ) | crontab -
+```
+
+| Script | Việc làm | Mục |
+|---|---|---|
+| `deploy/setup-server.sh` | Chuẩn bị Ubuntu/Debian: gói, Docker + Compose, `daemon.json` giới hạn log, ufw 22/80/443, swap 2 GB khi RAM < 2 GB, fail2ban, cập nhật bảo mật tự động | 4 |
+| `deploy/init-env.sh` | Tạo `.env` từ `.env.example`, sinh `LEAD_SECRET`/`METRICS_TOKEN`, quyền 600, không ghi đè `.env` có sẵn | 6 |
+| `deploy/preflight.sh` | Kiểm tra `.env` (biến bắt buộc, `APP_URL` khớp `APP_DOMAIN`, tên miền tách biệt, cấu hình thanh toán/S3/Zalo đủ cặp), DNS trỏ đúng IP, cổng 80/443, đĩa, RAM | 6, 7 |
+| `deploy/smoke-test.sh` | Kiểm tra bản triển khai đang chạy: health, trang, header bảo mật, 404, `APP_URL` đúng (chống CSRF), TLS ask, `/metrics`, website khách | 7 |
+| `deploy/backup.sh` | Sao lưu trực tuyến DB + ảnh, kiểm tra toàn vẹn, checksum, xoay vòng, chép ra ngoài (rclone) | 13 |
+| `deploy/restore.sh` | Khôi phục an toàn: checksum, sao lưu trước, kiểm tra trước khi thay, giữ dữ liệu cũ, tự khởi động lại khi lỗi | 13 |
+| `deploy/update.sh` | Cập nhật (mã nguồn hoặc image), sao lưu trước, chờ healthy, smoke test, quay lui tự động | 14 |
+| `deploy/test-stack.sh` | Kiểm thử toàn bộ các bước trên với stack thật trên `https://localhost` (chạy trong CI) | 21 |
+| `deploy/native/*` | Unit systemd, Caddyfile và script sao lưu cho cách chạy không dùng Docker | 15 |
 
 ## Mục lục
 
+0. [Cài đặt nhanh](#cài-đặt-nhanh)
 1. [Kiến trúc tổng quan](#1-kiến-trúc-tổng-quan)
 2. [Yêu cầu](#2-yêu-cầu)
 3. [Tên miền và DNS](#3-tên-miền-và-dns)
@@ -26,6 +69,7 @@ Cách triển khai khuyến nghị là **Docker Compose + Caddy** (mục 4–7).
 18. [Danh sách kiểm tra trước khi mở cho khách](#18-danh-sách-kiểm-tra-trước-khi-mở-cho-khách)
 19. [Xử lý sự cố](#19-xử-lý-sự-cố)
 20. [Giới hạn hiện tại và hướng mở rộng](#20-giới-hạn-hiện-tại-và-hướng-mở-rộng)
+21. [Kiểm thử bộ công cụ triển khai](#21-kiểm-thử-bộ-công-cụ-triển-khai)
 
 ---
 
@@ -129,7 +173,7 @@ Nếu muốn bật proxy Cloudflare cho `APP_DOMAIN`, phải cấu hình Caddy t
 
 ## 4. Chuẩn bị máy chủ
 
-Các lệnh dưới đây chạy trên Ubuntu 24.04 với quyền root (hoặc `sudo`).
+Các lệnh dưới đây chạy trên Ubuntu 24.04 với quyền root (hoặc `sudo`). `deploy/setup-server.sh` làm sẵn các mục 4.1, 4.3, 4.4, 4.5 (xem trước bằng `--dry-run`); mục 4.2 (khóa SSH) làm thủ công.
 
 ### 4.1. Cập nhật hệ thống và múi giờ
 
@@ -205,22 +249,19 @@ git checkout main          # nhánh phát hành
 git log --oneline -1       # ghi lại commit đang triển khai
 ```
 
-Nên triển khai từ một **tag phát hành** (vd `git checkout v1.0.0`) để dễ quay lui (mục 14). Danh sách phiên bản và ghi chú: trang **Releases** của repo và `CHANGELOG.md`. Mỗi tag cũng có image dựng sẵn `ghcr.io/hitechcloud-vietnam/hitechcloudlandingpage:<tag>`; hiện `docker-compose.yml` vẫn build từ mã nguồn (dùng image dựng sẵn: xem `docs/todo/14-continuous-deployment.md`).
+Nên triển khai từ một **tag phát hành** (vd `git checkout v1.0.0`) để dễ quay lui (mục 14). Danh sách phiên bản và ghi chú: trang **Releases** của repo và `CHANGELOG.md`. Mỗi tag cũng có image dựng sẵn `ghcr.io/hitechcloud-vietnam/hitechcloudlandingpage:<tag>`; mặc định `docker-compose.yml` build từ mã nguồn; muốn dùng image dựng sẵn xem mục 14.3.
 
 ## 6. Cấu hình biến môi trường (.env)
 
 ```bash
-cp .env.example .env
-chmod 600 .env
-nano .env
+deploy/init-env.sh --app-domain app.hitechcloud.vn --publish-domain hitechcloud.site --admin-email admin@congty.vn
+nano .env          # điền SMTP_URL, khóa payOS/Pay2S, ERROR_WEBHOOK_URL…
+deploy/preflight.sh
 ```
 
-Tạo các khóa bí mật ngẫu nhiên:
+`init-env.sh` điền sẵn `NODE_ENV`, `APP_URL`, `APP_DOMAIN`, `ACME_EMAIL`, `PUBLISH_ROOT_DOMAIN`, `CNAME_TARGET` (`sites.<tên miền trang khách>`), `SUPERADMIN_EMAILS`, `MAIL_FROM`, sinh `LEAD_SECRET` và `METRICS_TOKEN` ngẫu nhiên, đặt quyền 600. Làm thủ công thì: `cp .env.example .env && chmod 600 .env`, tạo khóa bằng `openssl rand -hex 32`.
 
-```bash
-openssl rand -hex 32   # dùng cho LEAD_SECRET
-openssl rand -hex 32   # dùng cho METRICS_TOKEN
-```
+`preflight.sh` báo **lỗi** (thoát mã 1) khi thiếu biến bắt buộc, `NODE_ENV` khác `production`, `APP_URL` không đúng bằng `https://<APP_DOMAIN>`, dashboard nằm trong tên miền trang khách, cấu hình thanh toán/S3/Zalo chỉ điền một phần, DNS không trỏ về máy chủ; báo **cảnh báo** khi thiếu SMTP, cổng thanh toán, cảnh báo lỗi, quyền `.env` quá rộng, ít RAM/đĩa. Tùy chọn: `--ip <IP công khai>`, `--skip-dns` (trước khi trỏ DNS).
 
 ### 6.1. Bảng biến môi trường
 
@@ -333,13 +374,15 @@ docker compose logs -f app      # Ctrl+C để thoát
 
 Khi chạy thành công, log có dòng `HiTechCloud LandingPage đang chạy tại https://app.hitechcloud.vn (port 3000)` và trạng thái `app` chuyển sang `healthy` sau khoảng 30 giây.
 
-Kiểm tra từ máy của bạn:
+Kiểm tra (trên máy chủ hoặc bất kỳ máy nào có repo):
 
 ```bash
-curl -fsS https://app.hitechcloud.vn/healthz      # {"ok":true}
-curl -fsS https://app.hitechcloud.vn/readyz       # {"ok":true}
-curl -sI https://app.hitechcloud.vn/app/login | head -1   # HTTP/2 200
+deploy/smoke-test.sh                               # dùng APP_URL trong .env
+deploy/smoke-test.sh --url https://app.hitechcloud.vn --site demo    # thêm website khách demo.<PUBLISH_ROOT_DOMAIN>
+deploy/smoke-test.sh --resolve 203.0.113.10       # thử máy chủ mới trước khi đổi DNS
 ```
+
+Script kiểm tra `/healthz`, `/readyz`, trang chủ, trang đăng nhập và các header bảo mật (HSTS, nosniff, X-Frame-Options), trang 404, đăng nhập sai trả 401 (nếu trả 403 "Origin không hợp lệ" là `APP_URL` sai), `/_htc/tls-ask` từ chối tên miền lạ, `/metrics` yêu cầu token. Thủ công: `curl -fsS https://app.hitechcloud.vn/healthz` phải trả `{"ok":true}`.
 
 Lần đầu truy cập, Caddy mất vài giây để lấy chứng chỉ. Xem log Caddy: `docker compose logs -f caddy`.
 
@@ -350,7 +393,7 @@ Database được tạo và **migrate tự động** mỗi lần ứng dụng kh
 1. **Tạo tài khoản quản trị:** mở `https://app.hitechcloud.vn/app/signup` và đăng ký bằng một email có trong `SUPERADMIN_EMAILS`.
 2. **Xác minh email:** mở liên kết trong email xác minh. Nếu chưa cấu hình SMTP, tìm liên kết trong log:
    ```bash
-   docker compose logs app | grep -o 'https://[^ "]*/api/auth/verify?token=[a-f0-9]*' | tail -1
+   docker compose logs app | grep -o 'https://[^ "]*/api/auth/verify?token=[A-Za-z0-9_-]*' | tail -1
    ```
 3. **Vào trang quản trị** `https://app.hitechcloud.vn/app/admin` và kiểm tra các tab Khách hàng, Giao dịch, Mã giảm giá, An toàn nội dung.
 4. **Thử luồng chính:** tạo website từ mẫu → sửa trong trình thiết kế → Xuất bản → mở `https://<subdomain>.hitechcloud.site` (lần đầu chờ vài giây để cấp chứng chỉ) → gửi form → kiểm tra lead trong tab "Khách hàng tiềm năng" và email thông báo.
@@ -434,7 +477,7 @@ Lưu ý:
 
 ### 12.1. Cách cấp chứng chỉ
 
-- `APP_DOMAIN`: Caddy lấy chứng chỉ ngay khi khởi động.
+- `APP_DOMAIN`: Caddy lấy chứng chỉ khi khởi động. Tùy cách Caddy gom chính sách cấp chứng chỉ, tên miền dashboard cũng có thể đi qua bước hỏi `tls-ask` bên dưới; ứng dụng luôn trả 200 cho host của `APP_URL` nên dashboard luôn có chứng chỉ.
 - Tên miền con của khách và tên miền riêng: Caddy lấy chứng chỉ ở **lượt truy cập HTTPS đầu tiên** (on-demand TLS). Trước khi lấy, Caddy hỏi `http://app:3000/_htc/tls-ask?domain=<host>`; ứng dụng chỉ trả 200 khi host là tên miền con của một website đang hoạt động hoặc tên miền riêng **đã xác minh**, và website không bị tạm ngưng. Nhờ vậy kẻ xấu không thể bắt Caddy xin chứng chỉ cho tên miền tùy ý.
 
 ### 12.2. Giới hạn của Let's Encrypt và chứng chỉ wildcard
@@ -485,119 +528,118 @@ Dữ liệu cần sao lưu đều nằm trong volume `app-data` (`/data` trong c
 
 | Thành phần | Cách sao lưu |
 |---|---|
-| `hitechcloud.db` | `scripts/backup.js` (dùng `VACUUM INTO`, nhất quán khi ứng dụng đang chạy). **Không** copy trực tiếp file `.db` khi ứng dụng đang chạy vì dữ liệu mới có thể còn trong file `-wal` |
+| `hitechcloud.db` | `VACUUM INTO` (qua `scripts/backup.js`), nhất quán khi ứng dụng đang chạy. **Không** copy trực tiếp file `.db` khi ứng dụng đang chạy vì dữ liệu mới có thể còn trong file `-wal` |
 | `uploads/` | Nén thư mục (chỉ cần khi không dùng S3, hoặc còn ảnh cũ trên đĩa) |
-| `lead-secret` | Đi kèm khi nén `/data`. Chỉ cần nếu không đặt `LEAD_SECRET` |
+| `lead-secret` | Chỉ có khi không đặt `LEAD_SECRET` |
 | `.env` | Lưu riêng ở nơi an toàn (trình quản lý mật khẩu). Không đưa vào Git |
 
-### 13.1. Script sao lưu hằng ngày
-
-Tạo `/opt/hitechcloud/backup.sh`:
+### 13.1. Sao lưu: `deploy/backup.sh`
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
 cd /opt/hitechcloud
-DEST=/var/backups/hitechcloud
-STAMP=$(date +%F-%H%M)
-mkdir -p "$DEST"
-
-# 1. Database: bản sao nhất quán trong volume, sau đó chép ra máy chủ
-docker compose exec -T app node --disable-warning=ExperimentalWarning scripts/backup.js /data/backups
-LATEST=$(docker compose exec -T app sh -c 'ls -1t /data/backups/hitechcloud-*.db | head -1' | tr -d '\r')
-docker compose cp "app:$LATEST" "$DEST/hitechcloud-$STAMP.db"
-docker compose exec -T app sh -c 'find /data/backups -name "hitechcloud-*.db" -mtime +3 -delete'
-
-# 2. Ảnh trên đĩa và lead-secret
-docker compose exec -T app tar czf - -C /data uploads lead-secret 2>/dev/null > "$DEST/uploads-$STAMP.tar.gz" || true
-
-# 3. Kiểm tra bản sao lưu đọc được
-sqlite3 "$DEST/hitechcloud-$STAMP.db" 'PRAGMA integrity_check;' | grep -qx ok
-
-# 4. Giữ 14 ngày trên máy chủ
-find "$DEST" -type f -mtime +14 -delete
-echo "Sao lưu xong: $DEST ($STAMP)"
+deploy/backup.sh                                  # mặc định vào /var/backups/hitechcloud, giữ 14 ngày
+deploy/backup.sh --dest /mnt/backup --keep-days 30
 ```
 
-```bash
-chmod +x /opt/hitechcloud/backup.sh
-sudo /opt/hitechcloud/backup.sh        # chạy thử
-```
+Script làm lần lượt:
 
-Đặt lịch (02:30 hằng ngày) bằng `sudo crontab -e`:
+1. Tạo bản sao nhất quán trong volume bằng `VACUUM INTO`.
+2. Chạy `PRAGMA integrity_check` trên bản sao; lỗi thì dừng và báo.
+3. Chép ra `hitechcloud-<thời điểm>.db` (quyền 600), xóa bản tạm trong volume.
+4. Nén `uploads/` và `lead-secret` (nếu có) thành `files-<thời điểm>.tar.gz`.
+5. Ghi `SHA256SUMS-<thời điểm>` để kiểm tra khi khôi phục.
+6. Xóa bản cũ hơn số ngày giữ lại; chép ra ngoài máy chủ nếu đặt `--remote` / `BACKUP_REMOTE`.
+
+Các script chạy bằng người dùng vận hành (thuộc nhóm `docker`). `setup-server.sh --user deploy` đã tạo `/var/backups/hitechcloud` (quyền 700) và `/var/log/hitechcloud-backup.log` thuộc người dùng này. Đặt lịch (02:30 hằng ngày) bằng `crontab -e` của người dùng đó:
 
 ```cron
-30 2 * * * /opt/hitechcloud/backup.sh >> /var/log/hitechcloud-backup.log 2>&1
+30 2 * * * BACKUP_REMOTE=offsite:hitechcloud-backups /opt/hitechcloud/deploy/backup.sh >> /var/log/hitechcloud-backup.log 2>&1
 ```
 
 ### 13.2. Sao lưu ra ngoài máy chủ
 
-Bản sao lưu nằm trên cùng máy chủ không bảo vệ được khi mất máy chủ. Đẩy thêm ra object storage bằng `rclone`:
+Bản sao lưu nằm trên cùng máy chủ không bảo vệ được khi mất máy chủ. Cấu hình `rclone` (đã cài bởi `deploy/setup-server.sh`):
 
 ```bash
-apt -y install rclone
-rclone config                       # tạo remote, vd "offsite" (S3/R2/Google Drive…)
+rclone config             # tạo remote "offsite" (S3/R2/Google Drive…), nên thêm remote kiểu "crypt" để mã hóa
+deploy/backup.sh --remote offsite:hitechcloud-backups
 ```
 
-Thêm vào cuối `backup.sh`:
+`--remote` chỉ chép các file của 25 giờ gần nhất. Nên mã hóa bản sao lưu ngoài máy chủ vì database chứa dữ liệu cá nhân của khách và lead (Nghị định 13/2023).
 
-```bash
-rclone copy "$DEST" offsite:hitechcloud-backups --max-age 25h
-```
-
-Nên mã hóa bản sao lưu ngoài máy chủ (remote kiểu `crypt` của rclone) vì database chứa dữ liệu cá nhân của khách và lead (Nghị định 13/2023).
-
-### 13.3. Khôi phục
+### 13.3. Khôi phục: `deploy/restore.sh`
 
 ```bash
 cd /opt/hitechcloud
-BACKUP=/var/backups/hitechcloud/hitechcloud-2026-10-14-0230.db   # chọn bản cần khôi phục
-VOL=$(docker volume ls -q | grep '_app-data$')
-
-docker compose stop app
-docker run --rm -v "$VOL":/data -v "$(dirname "$BACKUP")":/b alpine sh -c "
-  mkdir -p /data/restore-old && mv /data/hitechcloud.db* /data/restore-old/ 2>/dev/null;
-  cp /b/$(basename "$BACKUP") /data/hitechcloud.db && chown 1000:1000 /data/hitechcloud.db"
-# Khôi phục ảnh (nếu cần):
-# docker run --rm -v "$VOL":/data -v /var/backups/hitechcloud:/b alpine sh -c 'tar xzf /b/uploads-<STAMP>.tar.gz -C /data && chown -R 1000:1000 /data/uploads'
-docker compose start app
-curl -fsS https://app.hitechcloud.vn/readyz
+ls -lt /var/backups/hitechcloud | head
+deploy/restore.sh /var/backups/hitechcloud/hitechcloud-20261014-023000.db \
+                       /var/backups/hitechcloud/files-20261014-023000.tar.gz
+deploy/smoke-test.sh
 ```
 
-File database cũ được giữ trong `/data/restore-old/`; xóa sau khi xác nhận khôi phục thành công. Nên **diễn tập khôi phục** mỗi quý trên một máy chủ thử.
+Thứ tự an toàn mà script áp dụng:
+
+1. Kiểm tra checksum (`SHA256SUMS-…`), hỏi xác nhận (gõ `KHOI PHUC`, hoặc `--yes` khi chạy tự động).
+2. Sao lưu dữ liệu hiện tại vào `<thư mục bản sao lưu>/pre-restore/` (bỏ qua bằng `--no-safety-backup`).
+3. Dừng `app`, chép bản sao lưu vào vùng tạm và chạy `integrity_check`.
+4. Chỉ khi bản sao lưu hợp lệ mới thay dữ liệu đang dùng. Dữ liệu cũ được chuyển vào `/data/restore-old/<thời điểm>/`, không bị xóa.
+5. Khởi động `app` và chờ đến khi healthy. Nếu bất kỳ bước nào lỗi, dữ liệu đang dùng được giữ nguyên và `app` được khởi động lại.
+
+Kiểm tra xong thì xóa `/data/restore-old/…`:
+
+```bash
+docker compose exec app rm -rf /data/restore-old
+```
+
+Nên **diễn tập khôi phục** mỗi quý trên một máy chủ thử. Toàn bộ quy trình sao lưu → khôi phục được CI kiểm thử tự động (mục 21).
 
 ## 14. Cập nhật phiên bản và quay lui
 
-### 14.1. Cập nhật
+### 14.1. Cập nhật: `deploy/update.sh`
 
 ```bash
 cd /opt/hitechcloud
-sudo ./backup.sh                          # luôn sao lưu trước khi cập nhật
-git fetch --tags origin
-git log --oneline HEAD..origin/main       # xem các thay đổi sắp áp dụng
-git checkout main && git pull --ff-only   # hoặc: git checkout v1.1.0
-docker compose up -d --build
-docker compose logs -f app                # theo dõi khởi động và migrate
-curl -fsS https://app.hitechcloud.vn/readyz
+deploy/update.sh                        # build từ mã nguồn: git pull --ff-only nhánh hiện tại
+deploy/update.sh --ref v1.1.0           # build từ mã nguồn: chuyển sang tag/nhánh/commit
+deploy/update.sh --image v1.1.0         # dùng image dựng sẵn ghcr.io/…:v1.1.0 (mục 14.3)
+deploy/update.sh --image v1.1.0 --auto-rollback
 ```
+
+Script lần lượt: kiểm tra `.env` (`preflight.sh`) → sao lưu (`backup.sh`, bỏ bằng `--no-backup`) → chuyển phiên bản → chờ `app` healthy → chạy `smoke-test.sh`. Nếu phiên bản mới không healthy hoặc smoke test lỗi:
+
+- có `--auto-rollback`: tự quay về commit/image trước và chờ healthy;
+- không có: in ra đúng lệnh quay lui.
+
+Lưu ý:
 
 - Migrate database chạy tự động khi khởi động; các thay đổi schema chỉ **thêm** bảng/cột.
-- Thời gian gián đoạn khoảng vài giây khi container `app` được tạo lại. Ứng dụng dừng nhẹ nhàng khi nhận SIGTERM (chờ request đang xử lý tối đa 10 giây).
-- Đọc phần "Cần làm trước khi công bố" và các biến mới trong `.env.example` của phiên bản mới: `git diff <commit-cũ>..HEAD -- .env.example`.
+- Gián đoạn khoảng vài giây khi container `app` được tạo lại (ứng dụng dừng nhẹ nhàng khi nhận SIGTERM, chờ request đang xử lý tối đa 10 giây).
+- Trước khi cập nhật, đọc `CHANGELOG.md` và các biến mới: `git diff <tag-cũ>..<tag-mới> -- .env.example`.
 - Dọn image cũ định kỳ: `docker image prune -f`.
 
-### 14.2. Quay lui
+### 14.2. Quay lui thủ công
 
 ```bash
-git checkout <commit-hoặc-tag-trước>
-docker compose up -d --build
+git checkout <commit-hoặc-tag-trước> && docker compose up -d --build                       # build từ mã nguồn
+sed -i 's|^APP_IMAGE=.*|APP_IMAGE=ghcr.io/hitechcloud-vietnam/hitechcloudlandingpage:v1.0.0|' .env \
+  && docker compose up -d --no-build                                                     # image dựng sẵn
 ```
 
-Vì migrate chỉ thêm cột/bảng, mã cũ thường chạy được trên database mới. Nếu phiên bản mới đã ghi dữ liệu mà mã cũ không hiểu, hoặc gặp lỗi dữ liệu, khôi phục bản sao lưu đã tạo trước khi cập nhật (mục 13.3). Dữ liệu phát sinh sau thời điểm sao lưu sẽ mất.
+Mã cũ thường chạy được trên database mới vì migrate chỉ thêm cột/bảng. Nếu phiên bản mới đã ghi dữ liệu mà mã cũ không hiểu, khôi phục bản sao lưu `update.sh` đã tạo trước khi cập nhật (mục 13.3); dữ liệu phát sinh sau thời điểm đó sẽ mất.
+
+### 14.3. Dùng image dựng sẵn thay vì build trên máy chủ
+
+Mỗi bản phát hành có image `ghcr.io/hitechcloud-vietnam/hitechcloudlandingpage:<tag>` (và `:latest`), do workflow `release.yml` tạo. Dùng image giúp cập nhật nhanh hơn và không cần RAM để build.
+
+```bash
+deploy/update.sh --image v1.0.0          # ghi APP_IMAGE vào .env, pull và khởi động lại
+```
+
+Nếu package trên GHCR để private, đăng nhập một lần bằng token chỉ có quyền `read:packages`: `echo <TOKEN> | docker login ghcr.io -u <github-user> --password-stdin`. Muốn quay lại build từ mã nguồn: để trống `APP_IMAGE=` trong `.env`.
 
 ## 15. Triển khai không dùng Docker
 
-Dùng khi máy chủ không cài được Docker hoặc muốn quản lý bằng systemd.
+Dùng khi máy chủ không cài được Docker hoặc muốn quản lý bằng systemd. Các file mẫu nằm trong `deploy/native/`.
 
 ### 15.1. Cài Node.js 22 và mã nguồn
 
@@ -606,15 +648,16 @@ curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt -y install nodejs
 node -v                                   # phải ≥ v22.13
 sudo useradd --system --home /opt/hitechcloud --shell /usr/sbin/nologin htc
-sudo mkdir -p /opt/hitechcloud /var/lib/hitechcloud
-sudo chown -R deploy:deploy /opt/hitechcloud
+sudo mkdir -p /opt/hitechcloud /var/lib/hitechcloud /var/backups/hitechcloud
+sudo chown deploy:deploy /opt/hitechcloud
 cd /opt/hitechcloud && git clone https://github.com/hitechcloud-vietnam/HiTechCloudLandingPage.git . && git checkout main
 npm ci --omit=dev
-sudo chown -R htc:htc /var/lib/hitechcloud
-cp .env.example .env && chmod 640 .env && sudo chown deploy:htc .env
+sudo chown -R htc:htc /var/lib/hitechcloud /var/backups/hitechcloud
+deploy/init-env.sh --app-domain app.hitechcloud.vn --publish-domain hitechcloud.site --admin-email admin@congty.vn
+sudo chown deploy:htc .env && sudo chmod 640 .env
 ```
 
-Trong `.env`, đặt thêm:
+Trong `.env`, sửa 3 dòng sau (giá trị mặc định là đường dẫn trong Docker):
 
 ```dotenv
 DB_FILE=/var/lib/hitechcloud/hitechcloud.db
@@ -624,40 +667,15 @@ PORT=3000
 
 ### 15.2. Dịch vụ systemd
 
-`/etc/systemd/system/hitechcloud.service`:
-
-```ini
-[Unit]
-Description=HiTechCloud LandingPage
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-User=htc
-Group=htc
-WorkingDirectory=/opt/hitechcloud
-EnvironmentFile=/opt/hitechcloud/.env
-ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning src/server.js
-Restart=always
-RestartSec=3
-KillSignal=SIGTERM
-TimeoutStopSec=15
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/var/lib/hitechcloud
-PrivateTmp=true
-
-[Install]
-WantedBy=multi-user.target
-```
-
 ```bash
+sudo cp deploy/native/hitechcloud.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now hitechcloud
 sudo systemctl status hitechcloud
 journalctl -u hitechcloud -f
 ```
+
+Unit chạy bằng người dùng `htc`, chỉ được ghi vào `/var/lib/hitechcloud` (`ProtectSystem=strict`). Biến môi trường lấy từ `.env` qua `EnvironmentFile`.
 
 ### 15.3. Caddy chạy trực tiếp
 
@@ -666,43 +684,21 @@ sudo apt -y install debian-keyring debian-archive-keyring apt-transport-https
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
 sudo apt update && sudo apt -y install caddy
+sudo cp deploy/native/Caddyfile /etc/caddy/Caddyfile
+sudo nano /etc/caddy/Caddyfile            # thay app.hitechcloud.vn và email
+sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
 ```
 
-`/etc/caddy/Caddyfile` (giống `deploy/Caddyfile`, đổi `app:3000` thành `127.0.0.1:3000` và ghi trực tiếp tên miền):
-
-```caddyfile
-{
-	email admin@hitechcloud.vn
-	on_demand_tls {
-		ask http://127.0.0.1:3000/_htc/tls-ask
-	}
-}
-
-app.hitechcloud.vn {
-	encode zstd gzip
-	reverse_proxy 127.0.0.1:3000
-}
-
-https:// {
-	tls {
-		on_demand
-	}
-	encode zstd gzip
-	reverse_proxy 127.0.0.1:3000
-}
-```
+### 15.4. Sao lưu, cập nhật
 
 ```bash
-sudo systemctl reload caddy
+sudo -u htc /opt/hitechcloud/deploy/native/backup.sh               # vào /var/backups/hitechcloud, giữ 14 ngày
+# cron của người dùng htc: 30 2 * * * /opt/hitechcloud/deploy/native/backup.sh
+git pull --ff-only && npm ci --omit=dev && sudo systemctl restart hitechcloud
+deploy/smoke-test.sh
 ```
 
-Sao lưu khi chạy không dùng Docker:
-
-```bash
-cd /opt/hitechcloud && sudo -u htc env $(grep -v '^#' .env | xargs) node --disable-warning=ExperimentalWarning scripts/backup.js /var/backups/hitechcloud
-```
-
-Cập nhật: `git pull --ff-only && npm ci --omit=dev && sudo systemctl restart hitechcloud`.
+Khôi phục: `sudo systemctl stop hitechcloud`, chép file `.db` vào `/var/lib/hitechcloud/hitechcloud.db` (xóa `hitechcloud.db-wal`, `hitechcloud.db-shm` cũ), giải nén `files-….tar.gz` vào `/var/lib/hitechcloud`, `sudo chown -R htc:htc /var/lib/hitechcloud`, rồi `sudo systemctl start hitechcloud`.
 
 ## 16. Giám sát, log và cảnh báo
 
@@ -722,8 +718,8 @@ Giám sát từ bên ngoài bằng Uptime Kuma, UptimeRobot hoặc Better Stack:
 
 ```bash
 docker compose logs -f app
-docker compose logs app --since 1h | jq -c 'select(.level == "error")'
-docker compose logs app --since 1h | jq -c 'select(.reqId == "<requestId>")'
+docker compose logs --no-log-prefix app --since 1h | jq -cR 'fromjson? | select(.level == "error")'
+docker compose logs --no-log-prefix app --since 1h | jq -cR 'fromjson? | select(.reqId == "<requestId>")'
 ```
 
 Muốn tập trung log: dùng Grafana Loki (promtail đọc log container Docker) hoặc Vector/Fluent Bit gửi về ELK.
@@ -765,7 +761,7 @@ Chỉ số kinh doanh có sẵn: `hitechcloud_users`, `hitechcloud_workspaces`, 
 ```bash
 df -h /
 docker system df
-docker compose exec app du -sh /data/hitechcloud.db* /data/uploads /data/backups
+docker compose exec app sh -c 'du -sh /data/hitechcloud.db* /data/uploads /data/backups 2>/dev/null'
 ```
 
 Cảnh báo khi đĩa dùng > 80%. Khi SQLite đầy đĩa, mọi thao tác ghi (đăng ký, gửi form) đều lỗi.
@@ -843,7 +839,7 @@ Việc của người vận hành:
 | `app` liên tục khởi động lại | Lỗi cấu hình, đĩa đầy, file DB hỏng | `docker compose logs --tail 200 app`; `df -h`; khôi phục từ bản sao lưu |
 | Docker build thất bại vì hết RAM | Máy chủ 1 GB không có swap | Bật swap (mục 4.4) |
 
-Lấy thông tin để báo lỗi: thời điểm, `requestId` hiển thị cho người dùng, và kết quả `docker compose logs app --since 30m | jq -c 'select(.reqId=="<requestId>")'`.
+Lấy thông tin để báo lỗi: thời điểm, `requestId` hiển thị cho người dùng, và kết quả `docker compose logs --no-log-prefix app --since 30m | jq -cR 'fromjson? | select(.reqId=="<requestId>")'`.
 
 ## 20. Giới hạn hiện tại và hướng mở rộng
 
@@ -851,3 +847,22 @@ Lấy thông tin để báo lỗi: thời điểm, `requestId` hiển thị cho 
 - **Mở rộng theo chiều dọc trước:** tăng CPU/RAM, dùng ổ NVMe, chuyển ảnh sang S3 + CDN.
 - **Khi cần nhiều máy chủ:** chuyển database sang PostgreSQL (trong lộ trình), đưa giới hạn tần suất và hàng đợi sang Redis, rồi chạy nhiều bản `app` sau Caddy/load balancer.
 - **CDN cho trang khách:** có thể đặt CDN trước tên miền con của khách sau khi đã dùng chứng chỉ wildcard; trang đã xuất bản có thể cache ngắn hạn nhưng form gửi về `/_htc/lead` không được cache.
+
+## 21. Kiểm thử bộ công cụ triển khai
+
+`deploy/test-stack.sh` chạy toàn bộ quy trình trên stack production thật (container `app` + Caddy, HTTPS bằng CA nội bộ của Caddy trên `https://localhost`):
+
+1. `init-env.sh` + `preflight.sh`, `docker compose up -d --build`, chờ healthy.
+2. `smoke-test.sh`.
+3. Luồng người dùng qua HTTPS: đăng ký (có đồng ý điều khoản) → xác minh email (lấy liên kết từ log) → tạo website từ mẫu → xuất bản → xem `/p/<subdomain>` → tải ảnh lên.
+4. `backup.sh` → sửa dữ liệu → `restore.sh` → dữ liệu và ảnh trở về đúng thời điểm sao lưu.
+5. Khôi phục từ file hỏng: phải bị từ chối, dữ liệu đang dùng giữ nguyên, `app` chạy lại, smoke test đạt.
+6. Dọn dẹp (`docker compose down -v`, xóa `.env` thử) — giữ lại bằng `--keep`.
+
+Script từ chối chạy khi đã có `.env` (tránh ghi đè cấu hình thật). Job **Deploy test** trong CI chạy `shellcheck` cho mọi script trong `deploy/` và chạy `deploy/test-stack.sh` cho mỗi PR và mỗi lần push lên `main`. Chạy tại máy: cần Docker, cổng 80/443 trống:
+
+```bash
+deploy/test-stack.sh                       # build image từ mã nguồn
+deploy/test-stack.sh --image hitechcloud-landingpage:local --keep
+```
+

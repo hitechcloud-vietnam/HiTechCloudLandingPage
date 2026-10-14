@@ -1,0 +1,23 @@
+# Caddy without Docker (docs/DEPLOYMENT.md section 15). Copy to /etc/caddy/Caddyfile,
+# replace app.hitechcloud.vn and the email, then: sudo systemctl reload caddy
+{
+	email admin@hitechcloud.vn
+	on_demand_tls {
+		ask http://127.0.0.1:3000/_htc/tls-ask
+	}
+}
+
+# Dashboard, editor and API
+app.hitechcloud.vn {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3000
+}
+
+# Published landing pages (subdomains and verified custom domains)
+https:// {
+	tls {
+		on_demand
+	}
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3000
+}

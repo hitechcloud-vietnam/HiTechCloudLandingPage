@@ -101,8 +101,18 @@ function createSitesRouter({ db, config, access, notifier }) {
   }
 
   // Caddy on-demand TLS "ask" hook: only issue certificates for hosts we serve.
+  // The dashboard host is allowed too: depending on how Caddy groups its automation
+  // policies, APP_DOMAIN can be routed through the on-demand check as well.
+  const appHost = (() => {
+    try {
+      return new URL(config.appUrl).hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  })();
   r.get('/_htc/tls-ask', (req, res) => {
     const domain = String(req.query.domain || '').toLowerCase();
+    if (appHost && domain === appHost) return res.status(200).end();
     const site = siteForHost(domain);
     res.status(site && !site.suspended_at ? 200 : 404).end();
   });
