@@ -8,7 +8,7 @@ const { listBlocks, renderTemplate, BASE_CSS } = require('../src/templates');
 const { startServer, client, verifyEmail } = require('./helpers');
 
 const render = (html) => renderPage({ page: { slug: 'index', title: 'T' }, site: { id: 1 }, html, css: '', showBranding: false });
-const scripts = (html) => (html.match(/<script>[\s\S]*?<\/script>/g) || []);
+const scripts = (html) => (html.match(/<script>[\s\S]*?<\/script>/gi) || []);
 
 test('widget runtimes are injected only when their attribute is present', () => {
   const plain = render('<section><h1>Xin chào</h1></section>');

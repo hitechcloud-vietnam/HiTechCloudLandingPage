@@ -106,7 +106,7 @@ function scanPage({ title = '', html = '' }) {
     .map((tag) => attr(tag, 'action'))
     .filter((a) => /^\s*(https?:)?\/\//i.test(a));
   if (offsite.length) hit(20, 'Biểu mẫu gửi dữ liệu tới máy chủ bên ngoài');
-  if (/api\.telegram\.org\/bot/i.test(src)) hit(40, 'Mã gửi dữ liệu tới Telegram bot');
+  if (src.toLowerCase().includes('api.telegram.org/bot')) hit(40, 'Mã gửi dữ liệu tới Telegram bot');
 
   const brand = !!(titleBrand || bodyBrand);
   return {

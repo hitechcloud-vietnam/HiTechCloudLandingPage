@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
 const { createSessionStore } = require('./auth');
@@ -147,11 +148,12 @@ function createApp({ db, config }) {
   app.use(metrics.unmatched);
   app.use(express.static(path.join(ROOT, 'public'), { extensions: ['html'] }));
 
-  // Branded 404 for browsers; plain text for everything else.
+  // Branded 404 for browsers (read once at startup); plain text for everything else.
+  const notFoundHtml = fs.readFileSync(path.join(ROOT, 'public', '404.html'), 'utf8');
   app.use((req, res) => {
     res.status(404);
     if ((req.method === 'GET' || req.method === 'HEAD') && req.accepts('html')) {
-      return res.sendFile(path.join(ROOT, 'public', '404.html'));
+      return res.type('html').send(notFoundHtml);
     }
     res.type('text/plain').send('Không tìm thấy');
   });

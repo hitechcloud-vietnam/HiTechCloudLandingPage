@@ -188,8 +188,8 @@ function createMetrics({ db, config, cacheMs = 15_000, now = () => Date.now() })
   // request falls through, so a customer page with slug "metrics" keeps working.
   function handler(req, res, next) {
     if (!config.metricsToken || String(req.hostname || '').toLowerCase() !== appHost) return next();
-    const m = /^Bearer\s+(.+)$/i.exec(req.get('authorization') || '');
-    if (!m || !tokenMatches(m[1].trim(), config.metricsToken)) {
+    const m = /^Bearer\s+(\S+)\s*$/i.exec(req.get('authorization') || '');
+    if (!m || !tokenMatches(m[1], config.metricsToken)) {
       res.setHeader('WWW-Authenticate', 'Bearer realm="metrics"');
       return res.status(401).type('text/plain').send('Unauthorized\n');
     }
