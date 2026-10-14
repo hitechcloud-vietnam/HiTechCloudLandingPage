@@ -196,7 +196,10 @@ src/
   metrics.js         Metric Prometheus (/metrics)
   errors.js          Gửi cảnh báo lỗi qua webhook (giới hạn 1 lần/phút mỗi loại lỗi)
 public/
-  index.html         Trang giới thiệu sản phẩm
+  index.html         Trang giới thiệu sản phẩm (SEO, Open Graph, JSON-LD, bảng giá lấy từ /api/plans)
+  terms.html, privacy.html, refund.html, contact.html, 404.html
+                     Điều khoản, chính sách bảo mật, thanh toán & hoàn tiền, liên hệ, trang 404
+  robots.txt, sitemap.xml  SEO cho trang giới thiệu của nền tảng
   app/               Dashboard (đăng nhập, workspace, website, lead, thanh toán), admin.html
   editor.html        Trình thiết kế GrapesJS
 test/                Test API bằng node:test
@@ -277,6 +280,38 @@ Hỗ trợ các quyền của chủ thể dữ liệu theo Nghị định 13/202
 - **Tải dữ liệu của tôi:** tệp JSON gồm hồ sơ, danh sách workspace tham gia và vai trò. Với workspace bạn sở hữu, tệp có thêm website, trang (HTML/CSS), lead và đơn hàng. Tệp không chứa mật khẩu băm, token, khóa tích hợp (như Telegram bot token) hay thông tin của thành viên khác.
 - **Xóa tài khoản:** cần nhập mật khẩu và gõ `XOA TAI KHOAN`. Hệ thống xóa vĩnh viễn tài khoản, session và các workspace bạn sở hữu (kèm website, trang, lead, đơn hàng), sau đó gửi email xác nhận. Nếu bạn còn sở hữu workspace có thành viên khác thì phải chuyển quyền sở hữu hoặc xóa các thành viên trước.
 - **Chuyển quyền sở hữu:** chủ sở hữu chuyển workspace cho một quản trị viên hoặc biên tập viên hiện có (tab **Thành viên**). Chủ sở hữu cũ trở thành quản trị viên.
+
+## Trang pháp lý và thông tin cần điền trước khi công bố
+
+Cổng thanh toán (payOS, Pay2S) yêu cầu website có đủ thông tin doanh nghiệp và chính sách. Nghị định 13/2023/NĐ-CP về bảo vệ dữ liệu cá nhân cũng yêu cầu điều này. Các trang sau đã có sẵn:
+
+| Đường dẫn | Nội dung |
+|---|---|
+| `/terms` | Điều khoản sử dụng |
+| `/privacy` | Chính sách bảo mật và bảo vệ dữ liệu cá nhân: dữ liệu thu thập, mục đích, cơ sở pháp lý, bên xử lý, chuyển dữ liệu ra nước ngoài, thời gian lưu trữ, quyền của chủ thể dữ liệu, thông báo vi phạm |
+| `/refund` | Chính sách thanh toán, gia hạn và hoàn tiền |
+| `/contact` | Thông tin liên hệ và thông tin doanh nghiệp |
+| `/404.html` | Trang lỗi 404. Hiện chưa được nối vào server, Express vẫn trả 404 mặc định |
+
+Trang đăng ký có ô bắt buộc "Tôi đồng ý với Điều khoản sử dụng và Chính sách bảo mật". Ô này chỉ được kiểm tra ở trình duyệt, API đăng ký không thay đổi.
+
+> ⚠️ Các trang pháp lý là **bản mẫu** và đều có dòng thông báo "Bản mẫu — cần được luật sư rà soát trước khi công bố". Khi luật sư đã duyệt, xóa khối `<div class="legal-notice">` trong từng trang. Luật sư cũng cần đối chiếu với Luật Bảo vệ dữ liệu cá nhân và các văn bản hướng dẫn đang có hiệu lực.
+
+Những chỗ cần thay đều được đánh dấu `[...]` và tô vàng trên trang. Tìm bằng lệnh `grep -rn "\[" public/*.html`:
+
+- Thông tin doanh nghiệp (chân trang, `/terms`, `/privacy`, `/refund`, `/contact`, JSON-LD trên trang chủ): `[Mã số thuế]`, `[Ngày cấp]`, `[Nơi cấp]`, `[Địa chỉ trụ sở]`, `[Số điện thoại]`, `[Người đại diện theo pháp luật]`, `[Giờ làm việc…]`.
+- Pháp lý chung: `[Ngày hiệu lực]`. Trong `/terms` có thêm thời hạn báo trước khi đổi điều khoản `[15]` và nơi giải quyết tranh chấp `[Tỉnh/Thành phố]`.
+- Bảo vệ dữ liệu cá nhân (`/privacy`):
+  - Người phụ trách: `[Họ tên người phụ trách bảo vệ dữ liệu cá nhân]`.
+  - Nơi đặt máy chủ: `[Vị trí máy chủ…]`.
+  - Bên xử lý: `[Nhà cung cấp dịch vụ email/SMTP]`, `[Nhà cung cấp SMS – nếu sử dụng]`, `[Nhà cung cấp lưu trữ đối tượng – nếu sử dụng]`, `[Nhà cung cấp hạ tầng máy chủ / trung tâm dữ liệu]`.
+  - Thời hạn lưu trữ: `[30]` và `[90]` ngày.
+- Thanh toán (`/refund`, bảng giá trên trang chủ):
+  - VAT: `[Giá đã/chưa bao gồm VAT]`.
+  - Các mốc thời gian: `[2 giờ]`, `[3]`, `[7]`, `[24 giờ]`, `[1]`, `[5]`.
+  - Thời hạn xuất hóa đơn: `[Thời hạn nhận yêu cầu xuất hóa đơn]`.
+- Tên miền: thay `https://hitechcloud.vn` bằng tên miền thật. Cần thay ở thẻ canonical và Open Graph của các trang, JSON-LD trên trang chủ, `robots.txt` và `sitemap.xml`. Trang chủ chưa có `og:image`, có thể thêm khi đã có ảnh.
+- JSON-LD trên trang chủ ghi giá cố định (0–599.000đ). Khi sửa `src/plans.js`, cần cập nhật theo.
 
 ## Lộ trình tiếp theo
 

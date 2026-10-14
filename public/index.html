@@ -3,82 +3,514 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HiTechCloud LandingPage – Tạo landing page kéo thả trong vài phút</title>
-<meta name="description" content="Nền tảng SaaS tạo landing page kéo thả, thu lead, gắn tên miền riêng dành cho doanh nghiệp Việt Nam.">
+<title>HiTechCloud LandingPage – Tạo landing page kéo thả, thu lead tự động</title>
+<meta name="description" content="Nền tảng tạo landing page kéo thả cho doanh nghiệp Việt: 9 mẫu theo ngành, thu lead & CRM, A/B testing, tên miền riêng có HTTPS miễn phí, thanh toán VietQR. Bắt đầu miễn phí.">
+<link rel="canonical" href="https://hitechcloud.vn/">
+<meta name="theme-color" content="#2563eb">
 <link rel="stylesheet" href="/assets/app.css">
+<!-- Domain placeholders: replace https://hitechcloud.vn with the production marketing domain. -->
+<meta property="og:type" content="website">
+<meta property="og:locale" content="vi_VN">
+<meta property="og:site_name" content="HiTechCloud LandingPage">
+<meta property="og:title" content="HiTechCloud LandingPage – Tạo landing page kéo thả, thu lead tự động">
+<meta property="og:description" content="Kéo thả trên 9 mẫu theo ngành, gắn tên miền riêng có HTTPS miễn phí, nhận lead qua email, Telegram, Google Sheets và tối ưu bằng A/B testing.">
+<meta property="og:url" content="https://hitechcloud.vn/">
+<!-- <meta property="og:image" content="https://hitechcloud.vn/og-image.png"> [Ảnh chia sẻ 1200x630 – thêm khi có] -->
+<meta name="twitter:card" content="summary">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://hitechcloud.vn/#organization",
+      "name": "HiTechCloud-VN",
+      "legalName": "Công ty Cổ phần Giải pháp Phần mềm Phổ Tuệ",
+      "alternateName": "Pho Tue SoftWare Solutions JSC",
+      "url": "https://hitechcloud.vn/",
+      "email": "sales@hitechcloud.vn",
+      "telephone": "[Số điện thoại]",
+      "taxID": "[Mã số thuế]",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "[Địa chỉ trụ sở]",
+        "addressCountry": "VN"
+      },
+      "contactPoint": [
+        { "@type": "ContactPoint", "contactType": "sales", "email": "sales@hitechcloud.vn", "availableLanguage": ["vi"] },
+        { "@type": "ContactPoint", "contactType": "customer support", "email": "support@hitechcloud.vn", "availableLanguage": ["vi"] }
+      ]
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://hitechcloud.vn/#software",
+      "name": "HiTechCloud LandingPage",
+      "applicationCategory": "BusinessApplication",
+      "applicationSubCategory": "Landing page builder",
+      "operatingSystem": "Web",
+      "inLanguage": "vi",
+      "url": "https://hitechcloud.vn/",
+      "description": "Nền tảng SaaS tạo landing page kéo thả, thu lead, A/B testing và gắn tên miền riêng cho doanh nghiệp Việt Nam.",
+      "publisher": { "@id": "https://hitechcloud.vn/#organization" },
+      "offers": {
+        "@type": "AggregateOffer",
+        "priceCurrency": "VND",
+        "lowPrice": "0",
+        "highPrice": "599000",
+        "offerCount": "3"
+      }
+    }
+  ]
+}
+</script>
 <style>
-  .hero { padding: 88px 0 72px; text-align: center; background: linear-gradient(135deg, #eff6ff, #f5f3ff); }
-  .hero h1 { font-size: clamp(32px, 6vw, 52px); margin: 0 0 16px; }
-  .hero p { font-size: 19px; color: var(--muted); max-width: 680px; margin: 0 auto 28px; }
-  .hero .actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-  section.block { padding: 64px 0; }
-  section.block h2 { text-align: center; font-size: 30px; margin: 0 0 32px; }
-  .feature .icon { font-size: 28px; }
-  footer { padding: 28px 0; color: var(--muted); text-align: center; border-top: 1px solid var(--border); }
+  .hero { padding: 72px 0 64px; background: linear-gradient(160deg, #eff6ff 0%, #f5f3ff 60%, #f8fafc 100%); overflow: hidden; }
+  .hero-grid { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; }
+  .hero h1 { font-size: clamp(32px, 5.2vw, 52px); letter-spacing: -.02em; margin: 0 0 18px; }
+  .hero h1 em { font-style: normal; color: var(--primary); }
+  .hero-lead { font-size: 19px; color: #475569; margin: 0 0 28px; max-width: 580px; }
+  .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn-lg { padding: 13px 22px; font-size: 17px; border-radius: 10px; }
+  .hero-points { display: flex; flex-wrap: wrap; gap: 8px 20px; list-style: none; padding: 0; margin: 22px 0 0; color: #475569; font-size: 15px; }
+  .hero-points li::before, .plan-features li::before { content: "✓"; color: var(--success); font-weight: 800; margin-right: 6px; }
+
+  .mock { position: relative; background: #fff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 24px 60px rgba(30, 64, 175, .16); min-width: 0; }
+  .mock-bar { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .mock-bar i { width: 10px; height: 10px; border-radius: 50%; background: #e2e8f0; flex: none; }
+  .mock-bar span { margin-left: 8px; font-size: 12px; color: var(--muted); background: #f1f5f9; padding: 3px 10px; border-radius: 999px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .mock-body { display: grid; grid-template-columns: 92px 1fr; min-height: 300px; }
+  .mock-side { border-right: 1px solid var(--border); padding: 10px; display: grid; gap: 8px; align-content: start; }
+  .mock-side b { display: block; font-size: 11px; font-weight: 600; color: #475569; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px; padding: 8px 4px; text-align: center; }
+  .mock-canvas { padding: 18px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+  .mock-hero { background: linear-gradient(135deg, #1d4ed8, #7c3aed); border-radius: 10px; padding: 18px; color: #fff; outline: 2px solid #93c5fd; outline-offset: 3px; }
+  .mock-hero strong { display: block; font-size: 16px; margin-bottom: 6px; }
+  .mock-hero small { opacity: .9; }
+  .mock-line { height: 9px; background: #e2e8f0; border-radius: 5px; }
+  .mock-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; }
+  .mock-form span { height: 30px; border: 1px solid #cbd5e1; border-radius: 6px; }
+  .mock-form em { font-style: normal; font-size: 12px; font-weight: 700; color: #fff; background: var(--success); border-radius: 6px; padding: 7px 10px; }
+  .mock-toast { position: absolute; right: 14px; bottom: -22px; display: flex; gap: 10px; align-items: center; background: #0f172a; color: #fff; border-radius: 12px; padding: 10px 14px; font-size: 13px; box-shadow: 0 12px 30px rgba(15, 23, 42, .3); max-width: calc(100% - 28px); }
+  .mock-toast svg { flex: none; color: #fbbf24; }
+  .mock-toast small { display: block; color: #cbd5e1; }
+
+  .proof { padding: 28px 0; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .proof-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; text-align: center; margin: 0; }
+  .proof-stats div { min-width: 0; }
+  .proof-stats dt { font-size: 28px; font-weight: 800; color: var(--primary); order: -1; }
+  .proof-stats dd { margin: 0; color: #475569; font-size: 15px; }
+  .proof-stats div { display: flex; flex-direction: column; }
+  .chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 20px; padding: 0; list-style: none; }
+  .chips li { background: #f1f5f9; color: #334155; border-radius: 999px; padding: 6px 14px; font-size: 14px; font-weight: 500; }
+  .chips-label { text-align: center; color: var(--muted); font-size: 14px; margin: 20px 0 0; }
+
+  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .feature { min-width: 0; }
+  .feature h3 { margin: 14px 0 8px; font-size: 19px; }
+  .feature p { margin: 0; color: #475569; }
+  .feature ul { margin: 10px 0 0; padding-left: 18px; color: #475569; font-size: 15px; }
+  .icon-box { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; background: #dbeafe; color: var(--primary-hover); }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .tags span { font-size: 12px; font-weight: 600; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 999px; padding: 2px 9px; }
+
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; counter-reset: step; list-style: none; padding: 0; margin: 0; }
+  .steps li { position: relative; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px 20px 20px; }
+  .steps li::before { counter-increment: step; content: counter(step); display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--primary); color: #fff; font-weight: 800; margin-bottom: 12px; }
+  .steps h3 { margin: 0 0 8px; font-size: 19px; }
+  .steps p { margin: 0; color: #475569; }
+
+  .billing-toggle { display: inline-flex; background: #e2e8f0; border-radius: 999px; padding: 4px; gap: 4px; }
+  .billing-toggle button { border: 0; background: transparent; font: inherit; font-weight: 600; padding: 8px 16px; border-radius: 999px; cursor: pointer; color: #334155; }
+  .billing-toggle button[aria-pressed="true"] { background: #fff; color: var(--text); box-shadow: 0 1px 3px rgba(15, 23, 42, .15); }
+  .billing-toggle .save { color: #15803d; font-size: 13px; }
+  .pricing-wrap { text-align: center; margin-bottom: 28px; }
+  .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; align-items: stretch; }
+  .plan { display: flex; flex-direction: column; position: relative; min-width: 0; padding: 24px; }
+  .plan.featured { border: 2px solid var(--primary); box-shadow: 0 16px 40px rgba(37, 99, 235, .15); }
+  .plan-badge { position: absolute; top: -13px; left: 50%; transform: translateX(-50%); background: var(--primary); color: #fff; font-size: 13px; font-weight: 700; padding: 3px 12px; border-radius: 999px; white-space: nowrap; }
+  .plan h3 { margin: 0; font-size: 20px; }
+  .plan-desc { color: var(--muted); margin: 4px 0 16px; font-size: 15px; }
+  .plan-price { font-size: 34px; font-weight: 800; letter-spacing: -.02em; }
+  .plan-price small { font-size: 16px; font-weight: 500; color: var(--muted); }
+  .plan-note { min-height: 24px; color: #15803d; font-weight: 600; font-size: 14px; }
+  .plan-features { list-style: none; padding: 0; margin: 18px 0 24px; flex: 1; }
+  .plan-features li { padding: 5px 0; font-size: 15px; }
+  .plan .btn { width: 100%; }
+  .pricing-foot { text-align: center; color: #475569; font-size: 15px; margin: 24px auto 0; max-width: 720px; }
+
+  .faq { max-width: 800px; margin: 0 auto; }
+  .faq details { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 20px; }
+  .faq details + details { margin-top: 12px; }
+  .faq summary { cursor: pointer; font-weight: 700; padding: 16px 0; list-style-position: outside; }
+  .faq details p { margin: 0 0 16px; color: #475569; }
+
+  .cta-band { background: linear-gradient(135deg, #1d4ed8, #6d28d9); color: #fff; text-align: center; padding: 64px 0; }
+  .cta-band h2 { font-size: clamp(26px, 4vw, 36px); margin: 0 0 12px; }
+  .cta-band p { margin: 0 auto 28px; max-width: 620px; font-size: 18px; color: #e0e7ff; }
+  .cta-band .btn { background: #fff; color: #1e3a8a; }
+  .cta-band .btn:hover { background: #e0e7ff; }
+  .cta-band .btn-ghost { background: transparent; color: #fff; border-color: rgba(255, 255, 255, .6); }
+  .cta-band .btn-ghost:hover { background: rgba(255, 255, 255, .12); }
+
+  @media (max-width: 960px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 56px; }
+    .features, .plans { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 640px) {
+    .hero { padding: 44px 0 56px; }
+    .hero-lead { font-size: 17px; }
+    .features, .plans, .steps { grid-template-columns: 1fr; }
+    .proof-stats { grid-template-columns: repeat(2, 1fr); }
+    .mock-body { grid-template-columns: 72px 1fr; min-height: 250px; }
+    .mock-form { grid-template-columns: 1fr; }
+    .plans { gap: 28px; }
+  }
 </style>
 </head>
 <body>
-<header class="topbar">
+<a class="skip-link" href="#main">Bỏ qua, đến nội dung chính</a>
+<header class="topbar mk-header">
   <div class="container">
-    <a class="brand" href="/">HiTech<span>Cloud</span></a>
+    <a class="brand" href="/" aria-label="HiTechCloud LandingPage – Trang chủ">HiTech<span>Cloud</span></a>
+    <nav class="mk-nav" aria-label="Điều hướng chính">
+      <a href="/#features">Tính năng</a>
+      <a href="/#how">Cách hoạt động</a>
+      <a href="/#pricing">Bảng giá</a>
+      <a href="/#faq">Hỏi đáp</a>
+      <a href="/contact">Liên hệ</a>
+    </nav>
     <div class="topbar-right">
       <a class="btn btn-ghost btn-sm" href="/app/login">Đăng nhập</a>
       <a class="btn btn-sm" href="/app/signup"><span class="hide-sm">Dùng thử miễn phí</span><span class="show-sm">Đăng ký</span></a>
     </div>
   </div>
 </header>
-
-<section class="hero">
-  <div class="container">
-    <h1>Tạo landing page chuyên nghiệp<br>không cần lập trình</h1>
-    <p>Kéo thả trực quan, mẫu có sẵn, thu lead tự động và xuất bản lên tên miền riêng chỉ với một cú nhấp.</p>
-    <div class="actions">
-      <a class="btn" href="/app/signup">Bắt đầu miễn phí</a>
-      <a class="btn btn-ghost" href="#pricing">Xem bảng giá</a>
+<main id="main">
+<section class="hero" aria-labelledby="hero-title">
+  <div class="container hero-grid">
+    <div>
+      <span class="mk-eyebrow">Nền tảng landing page cho doanh nghiệp Việt</span>
+      <h1 id="hero-title">Landing page chuyển đổi cao, <em>thu lead tự động</em> – không cần lập trình</h1>
+      <p class="hero-lead">Kéo thả trên 9 mẫu theo ngành, xuất bản lên tên miền riêng có HTTPS miễn phí, nhận lead tức thì qua email, Telegram hay Google Sheets và tối ưu tỉ lệ chuyển đổi bằng A/B testing.</p>
+      <div class="hero-actions">
+        <a class="btn btn-lg" href="/app/signup">Tạo landing page miễn phí</a>
+        <a class="btn btn-ghost btn-lg" href="#pricing">Xem bảng giá</a>
+      </div>
+      <ul class="hero-points">
+        <li>Gói miễn phí không giới hạn thời gian</li>
+        <li>Không cần thẻ thanh toán</li>
+        <li>Thanh toán VietQR khi nâng cấp</li>
+      </ul>
+    </div>
+    <div class="mock" aria-hidden="true">
+      <div class="mock-bar"><i></i><i></i><i></i><span>ten-cua-ban.hitechcloud.site</span></div>
+      <div class="mock-body">
+        <div class="mock-side"><b>Hero</b><b>Tính năng</b><b>Bảng giá</b><b>Đánh giá</b><b>Form lead</b><b>FAQ</b></div>
+        <div class="mock-canvas">
+          <div class="mock-hero"><strong>Ưu đãi khai trương – giảm 30%</strong><small>Đăng ký nhận tư vấn miễn phí hôm nay</small></div>
+          <div class="mock-line" style="width:90%"></div>
+          <div class="mock-line" style="width:70%"></div>
+          <div class="mock-form"><span></span><span></span><em>Gửi ngay</em></div>
+          <div class="mock-line" style="width:55%"></div>
+        </div>
+      </div>
+      <div class="mock-toast">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21h4"/></svg>
+        <div><strong>Lead mới: Nguyễn Minh Anh</strong><small>utm_source=facebook · Form đăng ký</small></div>
+      </div>
     </div>
   </div>
 </section>
 
-<section class="block">
+<section class="proof" aria-label="Điểm nổi bật">
   <div class="container">
-    <h2>Mọi thứ để chạy chiến dịch marketing</h2>
-    <div class="grid">
-      <div class="card feature"><div class="icon">🧱</div><h3>Trình thiết kế kéo thả</h3><p class="muted">Dựa trên GrapesJS: chỉnh sửa trực quan, responsive cho máy tính, tablet và điện thoại.</p></div>
-      <div class="card feature"><div class="icon">📋</div><h3>Thu lead tự động</h3><p class="muted">Mọi biểu mẫu trên trang tự gửi dữ liệu về dashboard, xuất CSV một chạm.</p></div>
-      <div class="card feature"><div class="icon">🌐</div><h3>Tên miền riêng</h3><p class="muted">Xuất bản lên tên miền phụ miễn phí hoặc gắn tên miền của doanh nghiệp.</p></div>
-      <div class="card feature"><div class="icon">👥</div><h3>Làm việc nhóm</h3><p class="muted">Nhiều workspace, phân quyền chủ sở hữu, quản trị viên, biên tập viên.</p></div>
+    <dl class="proof-stats">
+      <div><dt>9</dt><dd>mẫu theo ngành</dd></div>
+      <div><dt>14</dt><dd>section dựng sẵn</dd></div>
+      <div><dt>6</dt><dd>kênh thông báo lead</dd></div>
+      <div><dt>0đ</dt><dd>để bắt đầu</dd></div>
+    </dl>
+    <p class="chips-label">Thiết kế sẵn cho các ngành:</p>
+    <ul class="chips">
+      <li>Spa &amp; thẩm mỹ</li>
+      <li>Bất động sản</li>
+      <li>Khóa học &amp; giáo dục</li>
+      <li>Nhà hàng &amp; F&amp;B</li>
+      <li>Bán hàng COD</li>
+      <li>Sự kiện &amp; webinar</li>
+      <li>Phần mềm SaaS</li>
+    </ul>
+  </div>
+</section>
+
+<section class="mk-section" id="features" aria-labelledby="features-title">
+  <div class="container">
+    <div class="mk-section-head">
+      <span class="mk-eyebrow">Tính năng</span>
+      <h2 id="features-title">Mọi thứ bạn cần để chạy chiến dịch, trong một nền tảng</h2>
+      <p>Từ thiết kế, đo lường quảng cáo đến chăm sóc lead – không cần ghép nối nhiều công cụ.</p>
+    </div>
+    <div class="features">
+      <article class="card feature">
+        <div class="icon-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12"/></svg></div>
+        <h3>Trình thiết kế kéo thả</h3>
+        <p>Xây dựng trên GrapesJS: kéo thả trực quan, xem trước trên máy tính, tablet và điện thoại. Tự động lưu, lưu lịch sử phiên bản, khôi phục chỉ một chạm.</p>
+      </article>
+      <article class="card feature">
+        <div class="icon-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
+        <h3>9 mẫu theo ngành</h3>
+        <p>Spa, bất động sản, khóa học, nhà hàng, bán hàng COD, sự kiện, SaaS… cùng 14 section dựng sẵn: bảng giá, đánh giá, FAQ, đếm ngược, nút gọi/Zalo/Messenger nổi.</p>
+      </article>
+      <article class="card feature">
+        <div class="icon-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6"/><path d="m16 11 2 2 4-4"/></svg></div>
+        <h3>Thu lead &amp; CRM tích hợp</h3>
+        <p>Mọi form trên trang tự gửi lead về hệ thống, kèm nguồn UTM và referrer. Quản lý trạng thái, ghi chú, bộ lọc và xuất CSV; có chống spam sẵn.</p>
+      </article>
+      <article class="card feature">
+        <div class="icon-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg></div>
+        <h3>A/B testing</h3>
+        <p>Chia lưu lượng giữa hai phiên bản, theo dõi lượt xem, lead, tỉ lệ chuyển đổi và độ tin cậy thống kê. Chọn phiên bản thắng chỉ với một cú nhấp.</p>
+      </article>
+      <article class="card feature">
+        <div class="icon-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div>
+        <h3>Tên miền riêng, HTTPS miễn phí</h3>
+        <p>Dùng ngay tên miền phụ miễn phí hoặc gắn tên miền của doanh nghiệp. Chứng chỉ HTTPS được cấp và gia hạn tự động.</p>
+      </article>
+      <article class="card feature">
+        <div class="icon-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg></div>
+        <h3>Đo lường quảng cáo</h3>
+        <p>Gắn mã theo dõi không cần lập trình. Sự kiện chuyển đổi "Lead" được gửi tự động khi khách điền form.</p>
+        <div class="tags"><span>GA4</span><span>Google Tag Manager</span><span>Facebook Pixel</span><span>TikTok Pixel</span></div>
+      </article>
+      <article class="card feature">
+        <div class="icon-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21h4"/></svg></div>
+        <h3>Thông báo lead tức thì</h3>
+        <p>Đội kinh doanh nhận lead ngay khi khách gửi form, trên kênh quen thuộc.</p>
+        <div class="tags"><span>Email</span><span>Webhook</span><span>Telegram</span><span>Slack</span><span>Discord</span><span>Google Sheets</span></div>
+      </article>
+      <article class="card feature">
+        <div class="icon-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM21 14v.01M14 21h.01M17 21h4v-4"/></svg></div>
+        <h3>Thanh toán nội địa</h3>
+        <p>Nâng cấp gói bằng VietQR qua payOS hoặc Pay2S. Không lưu thẻ, không tự động trừ tiền – bạn chủ động gia hạn khi cần.</p>
+      </article>
+      <article class="card feature">
+        <div class="icon-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 8-5 4 5 4M16 8l5 4-5 4M14 4l-4 16"/></svg></div>
+        <h3>API &amp; làm việc nhóm</h3>
+        <p>API công khai và webhook ký HMAC để nối với CRM, Zapier, Make, n8n. Nhiều workspace, phân quyền chủ sở hữu, quản trị viên, biên tập viên.</p>
+      </article>
     </div>
   </div>
 </section>
 
-<section class="block" id="pricing" style="background:#fff">
+<section class="mk-section mk-section-alt" id="how" aria-labelledby="how-title">
   <div class="container">
-    <h2>Bảng giá</h2>
-    <div class="grid" id="plans"></div>
+    <div class="mk-section-head">
+      <span class="mk-eyebrow">Cách hoạt động</span>
+      <h2 id="how-title">Lên chiến dịch chỉ trong 3 bước</h2>
+      <p>Không cần lập trình viên, không cần thuê máy chủ.</p>
+    </div>
+    <ol class="steps">
+      <li>
+        <h3>Chọn mẫu theo ngành</h3>
+        <p>Bắt đầu từ một trong 9 mẫu có sẵn nội dung và bảng màu phù hợp, hoặc từ trang trắng.</p>
+      </li>
+      <li>
+        <h3>Kéo thả &amp; kết nối</h3>
+        <p>Chỉnh nội dung, thêm form thu lead, gắn GA4/Pixel và chọn kênh nhận thông báo lead.</p>
+      </li>
+      <li>
+        <h3>Xuất bản &amp; nhận lead</h3>
+        <p>Xuất bản lên tên miền của bạn với HTTPS. Lead đổ về dashboard và kênh thông báo ngay lập tức.</p>
+      </li>
+    </ol>
   </div>
 </section>
 
-<footer>
-  <div class="container">© 2026 HiTechCloud-VN · Pho Tue SoftWare Solutions JSC</div>
+<section class="mk-section" id="pricing" aria-labelledby="pricing-title">
+  <div class="container">
+    <div class="mk-section-head">
+      <span class="mk-eyebrow">Bảng giá</span>
+      <h2 id="pricing-title">Bắt đầu miễn phí, nâng cấp khi cần</h2>
+      <p>Giá niêm yết bằng VNĐ. Trả theo năm được tặng 2 tháng.</p>
+    </div>
+    <div class="pricing-wrap">
+      <div class="billing-toggle" role="group" aria-label="Chu kỳ thanh toán">
+        <button type="button" data-cycle="1" aria-pressed="true">Theo tháng</button>
+        <button type="button" data-cycle="12" aria-pressed="false">Theo năm <span class="save">tặng 2 tháng</span></button>
+      </div>
+    </div>
+    <div class="plans" id="plans" aria-live="polite">
+      <p class="muted" style="grid-column:1/-1;text-align:center">Đang tải bảng giá…</p>
+    </div>
+    <p class="pricing-foot">Thanh toán qua payOS (VietQR) hoặc Pay2S. Gói không tự động gia hạn và không tự trừ tiền; khi hết hạn, workspace tự chuyển về gói Miễn phí. <span class="placeholder">[Giá đã/chưa bao gồm VAT]</span>. Xem <a href="/refund">Chính sách thanh toán, gia hạn và hoàn tiền</a>.</p>
+  </div>
+</section>
+
+<section class="mk-section mk-section-alt" id="faq" aria-labelledby="faq-title">
+  <div class="container">
+    <div class="mk-section-head">
+      <span class="mk-eyebrow">Hỏi đáp</span>
+      <h2 id="faq-title">Câu hỏi thường gặp</h2>
+    </div>
+    <div class="faq">
+      <details>
+        <summary>Tôi không biết lập trình, có dùng được không?</summary>
+        <p>Được. Bạn chọn mẫu, kéo thả các section và sửa chữ, ảnh trực tiếp trên trang. Mọi thứ đều hiển thị tốt trên điện thoại mà không cần chỉnh thêm.</p>
+      </details>
+      <details>
+        <summary>Gói Miễn phí có giới hạn thời gian không?</summary>
+        <p>Không. Gói Miễn phí dùng không thời hạn, gồm 1 website, 3 trang và 100 lead mỗi tháng trên tên miền phụ miễn phí. Bạn có thể nâng cấp bất cứ lúc nào.</p>
+      </details>
+      <details>
+        <summary>Thanh toán như thế nào? Có tự động trừ tiền không?</summary>
+        <p>Bạn thanh toán bằng VietQR / chuyển khoản qua payOS hoặc qua cổng Pay2S, theo chu kỳ 1 tháng hoặc 12 tháng (tặng 2 tháng). Hệ thống không lưu thông tin thẻ và không tự động trừ tiền; bạn nhận email nhắc trước khi gói hết hạn.</p>
+      </details>
+      <details>
+        <summary>Khi gói trả phí hết hạn thì website của tôi ra sao?</summary>
+        <p>Workspace tự chuyển về gói Miễn phí. Dữ liệu website và lead vẫn được giữ; các tính năng của gói trả phí như tên miền riêng sẽ tạm ngưng cho đến khi bạn gia hạn. Thời gian gia hạn được cộng dồn vào thời gian còn lại.</p>
+      </details>
+      <details>
+        <summary>Gắn tên miền riêng có khó không? HTTPS có mất phí không?</summary>
+        <p>Bạn chỉ cần thêm một bản ghi TXT để xác minh và một bản ghi CNAME tại nhà cung cấp tên miền, sau đó bấm "Kiểm tra DNS". Chứng chỉ HTTPS được cấp và gia hạn tự động, miễn phí.</p>
+      </details>
+      <details>
+        <summary>Tôi có thể đưa lead sang CRM hoặc Google Sheets không?</summary>
+        <p>Có. Lead có thể được gửi tức thì qua email, webhook (Zapier, Make, n8n, CRM riêng), Telegram, Slack, Discord, Google Sheets, xuất CSV hoặc lấy qua API.</p>
+      </details>
+      <details>
+        <summary>Dữ liệu khách hàng của tôi được bảo vệ thế nào?</summary>
+        <p>Dữ liệu được cách ly theo workspace, mật khẩu được băm, kết nối được mã hóa HTTPS. Với lead thu trên landing page, bạn là bên kiểm soát dữ liệu và chúng tôi xử lý theo chỉ dẫn của bạn. Xem chi tiết tại <a href="/privacy">Chính sách bảo mật</a>.</p>
+      </details>
+      <details>
+        <summary>Tôi có được hoàn tiền không?</summary>
+        <p>Các trường hợp được hoàn tiền (thanh toán trùng, gói không được kích hoạt…) và cách gửi yêu cầu được nêu trong <a href="/refund">Chính sách thanh toán, gia hạn và hoàn tiền</a>.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section class="cta-band" aria-labelledby="cta-title">
+  <div class="container">
+    <h2 id="cta-title">Sẵn sàng có landing page đầu tiên?</h2>
+    <p>Tạo tài khoản miễn phí, chọn mẫu và xuất bản ngay hôm nay. Cần tư vấn gói cho doanh nghiệp? Đội ngũ của chúng tôi luôn sẵn sàng.</p>
+    <div class="hero-actions" style="justify-content:center">
+      <a class="btn btn-lg" href="/app/signup">Bắt đầu miễn phí</a>
+      <a class="btn btn-ghost btn-lg" href="mailto:sales@hitechcloud.vn">Liên hệ tư vấn</a>
+    </div>
+  </div>
+</section>
+</main>
+<footer class="mk-footer">
+  <div class="container">
+    <div class="mk-footer-grid">
+      <div>
+        <a class="brand" href="/">HiTech<span>Cloud</span></a>
+        <p>Nền tảng tạo landing page kéo thả, thu lead và đo lường chiến dịch marketing cho doanh nghiệp Việt Nam.</p>
+        <p>HiTechCloud-VN là thương hiệu của Công ty Cổ phần Giải pháp Phần mềm Phổ Tuệ (Pho Tue SoftWare Solutions JSC).</p>
+      </div>
+      <nav aria-labelledby="ft-product">
+        <h2 id="ft-product">Sản phẩm</h2>
+        <ul>
+          <li><a href="/#features">Tính năng</a></li>
+          <li><a href="/#pricing">Bảng giá</a></li>
+          <li><a href="/#faq">Câu hỏi thường gặp</a></li>
+          <li><a href="/app/signup">Đăng ký miễn phí</a></li>
+          <li><a href="/app/login">Đăng nhập</a></li>
+        </ul>
+      </nav>
+      <nav aria-labelledby="ft-legal">
+        <h2 id="ft-legal">Chính sách</h2>
+        <ul>
+          <li><a href="/terms">Điều khoản sử dụng</a></li>
+          <li><a href="/privacy">Chính sách bảo mật</a></li>
+          <li><a href="/refund">Thanh toán &amp; hoàn tiền</a></li>
+          <li><a href="/contact">Liên hệ</a></li>
+        </ul>
+      </nav>
+      <div>
+        <h2>Liên hệ</h2>
+        <ul>
+          <li>Kinh doanh: <a href="mailto:sales@hitechcloud.vn">sales@hitechcloud.vn</a></li>
+          <li>Hỗ trợ: <a href="mailto:support@hitechcloud.vn">support@hitechcloud.vn</a></li>
+          <li>Điện thoại: <span class="placeholder">[Số điện thoại]</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="mk-footer-bottom">
+      <p>© 2026 Công ty Cổ phần Giải pháp Phần mềm Phổ Tuệ (Pho Tue SoftWare Solutions JSC). Mã số doanh nghiệp / Mã số thuế: <span class="placeholder">[Mã số thuế]</span>, cấp ngày <span class="placeholder">[Ngày cấp]</span> tại <span class="placeholder">[Nơi cấp]</span>.</p>
+      <p>Địa chỉ trụ sở: <span class="placeholder">[Địa chỉ trụ sở]</span>. Người đại diện theo pháp luật: <span class="placeholder">[Người đại diện theo pháp luật]</span>.</p>
+    </div>
+  </div>
 </footer>
-
 <script src="/assets/api.js"></script>
 <script>
-  fetch('/api/plans').then((r) => r.json()).then((plans) => {
-    const { esc, formatVnd, limit } = HTC;
-    document.getElementById('plans').innerHTML = plans.map((p) => `
-      <div class="card stack">
-        <h3 style="margin:0">${esc(p.name)}</h3>
-        <strong style="font-size:24px">${formatVnd(p.priceVnd)}</strong>
-        <ul class="muted" style="padding-left:18px;margin:0">
-          <li>${limit(p.maxSites)} website</li>
-          <li>${limit(p.maxPagesPerSite)} trang / website</li>
-          <li>${limit(p.maxLeadsPerMonth)} lead / tháng</li>
-          <li>${p.customDomain ? 'Tên miền riêng' : 'Tên miền phụ miễn phí'}</li>
-        </ul>
-        <a class="btn ${p.id === 'pro' ? '' : 'btn-ghost'}" href="/app/signup">Bắt đầu</a>
-      </div>`).join('');
-  });
+  (() => {
+    const { esc } = HTC;
+    const PLAN_DESC = {
+      free: 'Cho cá nhân và cửa hàng nhỏ bắt đầu thử nghiệm.',
+      pro: 'Cho doanh nghiệp chạy quảng cáo thường xuyên.',
+      business: 'Cho agency và đội marketing nhiều thương hiệu.',
+    };
+    const vnd = (n) => `${Math.round(n).toLocaleString('vi-VN')}đ`;
+    const qty = (n, unit) => (n === null ? `Không giới hạn ${unit}` : `${n.toLocaleString('vi-VN')} ${unit}`);
+    const storage = (mb) => (mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`);
+    let plans = [];
+    let cycle = 1;
+
+    function features(p) {
+      return [
+        qty(p.maxSites, 'website'),
+        `${qty(p.maxPagesPerSite, 'trang')} mỗi website`,
+        `${qty(p.maxLeadsPerMonth, 'lead')} mỗi tháng`,
+        `${p.maxMembers} thành viên`,
+        `${storage(p.storageMb)} thư viện ảnh`,
+        p.customDomain ? 'Tên miền riêng + HTTPS miễn phí' : 'Tên miền phụ miễn phí có HTTPS',
+        p.abTesting && 'A/B testing',
+        p.removeBranding && 'Gỡ nhãn "Tạo bởi HiTechCloud"',
+        p.customCode && 'Chèn mã tùy chỉnh vào trang',
+      ].filter(Boolean);
+    }
+
+    function price(p) {
+      if (!p.priceVnd) return { main: '0đ', unit: '', note: 'Miễn phí, không thời hạn' };
+      if (cycle === 12) {
+        const year = p.priceVnd * 10;
+        return { main: vnd(year), unit: '/năm', note: `≈ ${vnd(year / 12)}/tháng · tặng 2 tháng` };
+      }
+      return { main: vnd(p.priceVnd), unit: '/tháng', note: '' };
+    }
+
+    function render() {
+      document.getElementById('plans').innerHTML = plans.map((p) => {
+        const featured = p.id === 'pro';
+        const pr = price(p);
+        return `
+        <article class="card plan${featured ? ' featured' : ''}" aria-label="Gói ${esc(p.name)}">
+          ${featured ? '<span class="plan-badge">Phổ biến nhất</span>' : ''}
+          <h3>${esc(p.name)}</h3>
+          <p class="plan-desc">${esc(PLAN_DESC[p.id] || '')}</p>
+          <div class="plan-price">${esc(pr.main)}<small>${esc(pr.unit)}</small></div>
+          <div class="plan-note">${esc(pr.note)}</div>
+          <ul class="plan-features">${features(p).map((f) => `<li>${esc(f)}</li>`).join('')}</ul>
+          <a class="btn${featured ? '' : ' btn-ghost'}" href="/app/signup">${p.priceVnd ? `Chọn gói ${esc(p.name)}` : 'Bắt đầu miễn phí'}</a>
+        </article>`;
+      }).join('');
+    }
+
+    document.querySelectorAll('.billing-toggle button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        cycle = Number(btn.dataset.cycle);
+        document.querySelectorAll('.billing-toggle button').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+        if (plans.length) render();
+      });
+    });
+
+    fetch('/api/plans')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(r.status))))
+      .then((data) => { plans = data; render(); })
+      .catch(() => {
+        document.getElementById('plans').innerHTML = '<p class="muted" style="grid-column:1/-1;text-align:center">Không tải được bảng giá. Vui lòng tải lại trang hoặc liên hệ <a href="mailto:sales@hitechcloud.vn">sales@hitechcloud.vn</a>.</p>';
+      });
+  })();
 </script>
 </body>
 </html>
