@@ -6,7 +6,7 @@
 
 ## Bối cảnh
 
-CI (`.github/workflows/ci.yml`) đã chạy test Node 22/24, E2E Playwright, Docker build, CodeQL cho mọi PR và mỗi lần push lên `main`. Đã có `.github/workflows/release.yml`: đẩy tag `v*` sẽ chạy test, tạo GitHub Release (ghi chú lấy từ `CHANGELOG.md`) và đẩy image `ghcr.io/hitechcloud-vietnam/hitechcloudlandingpage:<tag>` + `:latest`. Chưa có bước triển khai tự động lên máy chủ; hiện triển khai thủ công theo `docs/DEPLOYMENT.md` mục 14.
+CI (`.github/workflows/ci.yml`) đã chạy test Node 22/24, E2E Playwright, Docker build, CodeQL cho mọi PR và mỗi lần push lên `main`. Đã có `.github/workflows/release.yml`: khi `main` có `version` mới trong `package.json` (hoặc khi đẩy tag `v*`) sẽ chạy test, tạo GitHub Release (ghi chú lấy từ `CHANGELOG.md`) và đẩy image `ghcr.io/hitechcloud-vietnam/hitechcloudlandingpage:<tag>` + `:latest`. Chưa có bước triển khai tự động lên máy chủ; hiện triển khai thủ công theo `docs/DEPLOYMENT.md` mục 14.
 
 ## Việc cần làm
 
