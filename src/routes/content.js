@@ -1,14 +1,13 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const fs = require('node:fs');
-const path = require('node:path');
 const express = require('express');
 const { handler } = require('../http');
 const { HttpError } = require('../access');
 const { requireUser } = require('../auth');
 const { transaction } = require('../db');
 const { workspacePlan, workspacePlanById } = require('../plans');
+const { createStorage } = require('../storage');
 
 const MAX_UPLOAD = 5 * 1024 * 1024;
 const MAX_VERSIONS = 20;
@@ -31,9 +30,8 @@ function cleanName(name) {
 }
 
 // Assets (image library), page version history and page duplication.
-function createContentRouter({ db, config, access }) {
+function createContentRouter({ db, config, access, storage = createStorage(config) }) {
   const r = express.Router();
-  fs.mkdirSync(config.uploadsDir, { recursive: true });
   r.use(requireUser);
 
   const h = handler;
@@ -42,7 +40,7 @@ function createContentRouter({ db, config, access }) {
     return db.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM assets WHERE workspace_id = ?').get(workspaceId).n;
   }
 
-  const assetView = (a) => ({ id: a.id, src: `/uploads/${a.path}`, name: a.name, type: 'image', size: a.size, createdAt: a.created_at });
+  const assetView = (a) => ({ id: a.id, src: storage.urlFor(a.path), name: a.name, type: 'image', size: a.size, createdAt: a.created_at });
 
   r.get('/workspaces/:wid/assets', h((req) => {
     const { ws } = access.workspace(req.user, req.params.wid);
@@ -59,7 +57,7 @@ function createContentRouter({ db, config, access }) {
   r.post(
     '/workspaces/:wid/assets',
     express.raw({ type: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], limit: MAX_UPLOAD }),
-    h((req, res) => {
+    h(async (req, res) => {
       const { ws } = access.workspace(req.user, req.params.wid);
       // express.raw yields a Buffer only for the accepted image types; anything
       // else (missing body, other content types, arrays) is rejected here.
@@ -81,9 +79,17 @@ function createContentRouter({ db, config, access }) {
         // Malformed percent-encoding: keep the default name.
       }
       const rel = `${ws.id}/${crypto.randomBytes(12).toString('hex')}.${kind.ext}`;
-      const file = path.join(config.uploadsDir, rel);
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, buf);
+      try {
+        await storage.put(rel, buf, kind.mime);
+      } catch (err) {
+        console.error('[storage] upload failed:', err.message);
+        throw new HttpError(502, 'Không thể lưu ảnh lúc này, vui lòng thử lại sau');
+      }
+      // Re-check the quota after the async upload so concurrent uploads cannot overshoot.
+      if (storageUsed(ws.id) + buf.length > plan.storageMb * 1024 * 1024) {
+        await storage.remove(rel).catch(() => {});
+        throw new HttpError(402, `Đã hết dung lượng lưu trữ của gói ${plan.name} (${plan.storageMb} MB)`);
+      }
       const info = db
         .prepare('INSERT INTO assets (workspace_id, path, name, mime, size) VALUES (?, ?, ?, ?, ?)')
         .run(ws.id, rel, name, kind.mime, buf.length);
@@ -92,12 +98,18 @@ function createContentRouter({ db, config, access }) {
     })
   );
 
-  r.delete('/assets/:id', h((req) => {
+  r.delete('/assets/:id', h(async (req) => {
     const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(req.params.id);
     if (!asset) throw new HttpError(404, 'Không tìm thấy');
     access.workspace(req.user, asset.workspace_id);
+    // Remove the object first so a storage failure leaves the asset listed for a retry.
+    try {
+      await storage.remove(asset.path);
+    } catch (err) {
+      console.error('[storage] delete failed:', err.message);
+      throw new HttpError(502, 'Không thể xóa ảnh lúc này, vui lòng thử lại sau');
+    }
     db.prepare('DELETE FROM assets WHERE id = ?').run(asset.id);
-    fs.rmSync(path.join(config.uploadsDir, asset.path), { force: true });
     return { ok: true };
   }));
 

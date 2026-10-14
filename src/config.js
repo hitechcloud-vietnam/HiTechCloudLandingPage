@@ -19,6 +19,16 @@ const config = {
   cnameTarget: (process.env.CNAME_TARGET || '').toLowerCase(),
   dbFile: process.env.DB_FILE || path.join(__dirname, '..', 'data', 'hitechcloud.db'),
   uploadsDir: process.env.UPLOADS_DIR || path.join(__dirname, '..', 'data', 'uploads'),
+  // S3-compatible object storage for uploaded images; local disk when S3_BUCKET is empty.
+  s3: {
+    bucket: process.env.S3_BUCKET || '',
+    endpoint: process.env.S3_ENDPOINT || '',
+    region: process.env.S3_REGION || 'us-east-1',
+    accessKeyId: process.env.S3_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
+    publicUrl: process.env.S3_PUBLIC_URL || '',
+    forcePathStyle: ['1', 'true', 'yes'].includes(String(process.env.S3_FORCE_PATH_STYLE || '').toLowerCase()),
+  },
   superAdmins: list(process.env.SUPERADMIN_EMAILS),
   sessionDays: Number(process.env.SESSION_DAYS || 30),
   secureCookies: process.env.NODE_ENV === 'production',

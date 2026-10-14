@@ -35,7 +35,7 @@ Yêu cầu Node.js 22.13 trở lên (dùng SQLite tích hợp sẵn `node:sqlite
 ```bash
 npm install
 npm start            # http://localhost:3000
-npm test             # chạy 73 test (API, thanh toán, tên miền, A/B…)
+npm test             # chạy 79 test (API, thanh toán, tên miền, A/B…)
 ```
 
 Bắt đầu tại `http://localhost:3000/app/signup`.
@@ -64,6 +64,28 @@ docker compose up -d --build
 3. **Tên miền riêng:** khách thêm bản ghi TXT `_htc-verify.<domain>` (xác minh quyền sở hữu) và CNAME về `CNAME_TARGET` (trỏ lưu lượng), sau đó bấm "Kiểm tra DNS" trong cài đặt website.
 4. **Quản trị:** đặt `SUPERADMIN_EMAILS` để vào `/app/admin`.
 5. **Sao lưu:** chạy định kỳ `docker compose exec app node scripts/backup.js /data/backups`. Lệnh này dùng `VACUUM INTO`, chạy được khi ứng dụng vẫn đang hoạt động.
+
+## Lưu trữ ảnh
+
+Ảnh tải lên thư viện được lưu qua `src/storage.js`, có hai driver:
+
+- **local** (mặc định, khi `S3_BUCKET` để trống): lưu trên đĩa tại `UPLOADS_DIR` và phục vụ qua `/uploads/<workspace>/<tệp>`.
+- **s3**: khi đặt `S3_BUCKET`, ảnh được tải lên dịch vụ tương thích S3 (AWS S3, Cloudflare R2, MinIO, Viettel/VNPT/FPT Object Storage). Yêu cầu được ký bằng AWS Signature V4 (không cần AWS SDK); mỗi đối tượng có `Content-Type` đúng loại ảnh và `Cache-Control: public, max-age=31536000, immutable`.
+
+| Biến | Ý nghĩa |
+| --- | --- |
+| `S3_BUCKET` | Tên bucket. Đặt biến này để bật driver s3 |
+| `S3_ENDPOINT` | Endpoint của nhà cung cấp, vd `https://<account-id>.r2.cloudflarestorage.com`. Trống = AWS S3 theo `S3_REGION` |
+| `S3_REGION` | Vùng ký request (mặc định `us-east-1`; R2 dùng `auto`) |
+| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Khóa truy cập, chỉ cần quyền `PutObject` và `DeleteObject` trên bucket |
+| `S3_PUBLIC_URL` | URL công khai để trình duyệt tải ảnh (CDN, tên miền public của bucket). Trống = URL bucket trên endpoint |
+| `S3_FORCE_PATH_STYLE` | `true` để dùng dạng `<endpoint>/<bucket>/<key>` (MinIO và nhiều nhà cung cấp trong nước) |
+
+Lưu ý:
+
+- Ảnh được đọc trực tiếp từ `S3_PUBLIC_URL` (hoặc bucket), nên bucket/CDN phải cho phép **đọc công khai** các đối tượng; ứng dụng không cấp quyền này.
+- Khóa đối tượng giống đường dẫn cũ (`<workspace_id>/<tên ngẫu nhiên>.<đuôi>`). Khi chuyển từ local sang S3, hãy sao chép thư mục `UPLOADS_DIR` lên bucket (vd `aws s3 sync /data/uploads s3://<bucket>/`) để thư viện ảnh hiển thị đủ ảnh cũ. Các trang đã xuất bản vẫn dùng đường dẫn `/uploads/…` cũ, nên hãy giữ nguyên volume `UPLOADS_DIR`: ứng dụng vẫn phục vụ `/uploads` với mọi driver.
+- Nếu dịch vụ lưu trữ lỗi, API trả về 502 và không ghi nhận ảnh (hoặc giữ ảnh trong thư viện khi xóa thất bại) để người dùng thử lại.
 
 ## Cấu hình cổng thanh toán
 
@@ -111,6 +133,7 @@ src/
   routes/sites.js    Phục vụ trang đã xuất bản (theo host hoặc /p/), xem trước, thu lead, sitemap, TLS ask
   routes/account.js  Quên mật khẩu, lời mời, đổi mật khẩu
   routes/content.js  Thư viện ảnh, lịch sử phiên bản, nhân bản trang
+  storage.js         Lưu ảnh tải lên: đĩa cục bộ hoặc S3-compatible (ký AWS SigV4)
   routes/abtests.js  A/B testing (chia lưu lượng, thống kê, chọn phiên bản thắng)
   http.js, usage.js  Tiện ích dùng chung (bọc handler, đếm mức sử dụng)
   siteSettings.js    Cài đặt tích hợp marketing và thông báo theo từng website
