@@ -576,21 +576,65 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   }));
 
   // ---------- Leads ----------
+  const LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
+
   r.get('/sites/:sid/leads', h((req, res) => {
     const { site } = access.site(req.user, req.params.sid);
+    const where = ['site_id = ?'];
+    const args = [site.id];
+    if (LEAD_STATUSES.includes(req.query.status)) {
+      where.push('status = ?');
+      args.push(req.query.status);
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '')) {
+      where.push('created_at >= ?');
+      args.push(req.query.from);
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '')) {
+      where.push("created_at < date(?, '+1 day')");
+      args.push(req.query.to);
+    }
+    const q = String(req.query.q || '').trim().slice(0, 100);
+    if (q) {
+      where.push("(data_json LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\')");
+      const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+      args.push(like, like);
+    }
     const rows = db
-      .prepare('SELECT id, page_slug, data_json, created_at FROM leads WHERE site_id = ? ORDER BY id DESC LIMIT 5000')
-      .all(site.id)
-      .map((l) => ({ id: l.id, page: l.page_slug, data: JSON.parse(l.data_json), createdAt: l.created_at }));
+      .prepare(`SELECT id, page_slug, data_json, source_json, status, note, created_at FROM leads WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT 5000`)
+      .all(...args)
+      .map((l) => ({
+        id: l.id,
+        page: l.page_slug,
+        data: JSON.parse(l.data_json),
+        source: JSON.parse(l.source_json || '{}'),
+        status: l.status,
+        note: l.note,
+        createdAt: l.created_at,
+      }));
 
     if (req.query.format !== 'csv') return rows;
 
     const keys = [...new Set(rows.flatMap((l) => Object.keys(l.data)))];
-    const lines = [['id', 'page', 'created_at', ...keys].map(csvCell).join(',')];
-    for (const l of rows) lines.push([l.id, l.page, l.createdAt, ...keys.map((k) => l.data[k])].map(csvCell).join(','));
+    const srcKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'ref'];
+    const lines = [['id', 'page', 'created_at', 'status', 'note', ...keys, ...srcKeys].map(csvCell).join(',')];
+    for (const l of rows) {
+      lines.push([l.id, l.page, l.createdAt, l.status, l.note, ...keys.map((k) => l.data[k]), ...srcKeys.map((k) => l.source[k])].map(csvCell).join(','));
+    }
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="leads-${site.subdomain}.csv"`);
-    res.send('﻿' + lines.join('\r\n'));
+    res.send('\uFEFF' + lines.join('\r\n'));
+  }));
+
+  r.patch('/leads/:lid', h((req) => {
+    const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.lid);
+    if (!lead) throw new HttpError(404, 'Không tìm thấy');
+    access.site(req.user, lead.site_id);
+    const status = req.body.status !== undefined ? req.body.status : lead.status;
+    if (!LEAD_STATUSES.includes(status)) throw new HttpError(400, 'Trạng thái không hợp lệ');
+    const note = req.body.note !== undefined ? str(req.body.note, { max: 2000, field: 'Ghi chú' }) : lead.note;
+    db.prepare('UPDATE leads SET status = ?, note = ? WHERE id = ?').run(status, note, lead.id);
+    return { ok: true };
   }));
 
   r.delete('/leads/:lid', h((req) => {

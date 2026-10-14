@@ -159,6 +159,10 @@ function migrate(db) {
   add('sites', 'domain_token', 'TEXT');
   add('sites', 'domain_verified_at', 'TEXT');
   add('workspaces', 'expiry_notice', 'TEXT');
+  add('leads', 'status', "TEXT NOT NULL DEFAULT 'new'");
+  add('leads', 'note', "TEXT NOT NULL DEFAULT ''");
+  add('leads', 'source_json', "TEXT NOT NULL DEFAULT '{}'");
+  add('leads', 'page_id', 'INTEGER');
 }
 
 // Runs fn inside a transaction, rolling back on error.
