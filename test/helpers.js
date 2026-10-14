@@ -72,4 +72,9 @@ function getWithHost(base, path, host) {
   });
 }
 
-module.exports = { APP_URL, testConfig, startServer, client, getWithHost };
+// Marks an account's email as verified (publishing and checkout require it).
+function verifyEmail(db, email) {
+  db.prepare("UPDATE users SET email_verified_at = datetime('now') WHERE email = ?").run(email);
+}
+
+module.exports = { APP_URL, testConfig, startServer, client, getWithHost, verifyEmail };

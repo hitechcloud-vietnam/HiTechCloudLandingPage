@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { startServer, client, getWithHost } = require('./helpers');
+const { startServer, client, getWithHost, verifyEmail } = require('./helpers');
 const { isPrivateAddress, assertPublicUrl, guardedLookup, httpsPostJson } = require('../src/notify');
 
 test('site integrations: tracking, SEO files, lead notifications', async (t) => {
@@ -17,6 +17,7 @@ test('site integrations: tracking, SEO files, lead notifications', async (t) => 
 
   const c = client(base);
   await c('POST', '/api/auth/signup', { name: 'Chủ', email: 'owner@example.com', password: 'matkhau123' });
+  verifyEmail(db, 'owner@example.com');
   const wsId = (await c('GET', '/api/auth/me')).data.workspaces[0].id;
   const site = (await c('POST', `/api/workspaces/${wsId}/sites`, { name: 'Shop', subdomain: 'shop', template: 'leadgen' })).data;
   const pages = (await c('GET', `/api/sites/${site.id}/pages`)).data;

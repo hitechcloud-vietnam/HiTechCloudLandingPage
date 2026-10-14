@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const { openDb } = require('../src/db');
 const { createApp } = require('../src/app');
+const { verifyEmail } = require('./helpers');
 
 const APP_URL = 'http://localhost:3999';
 
@@ -73,6 +74,7 @@ test('SaaS end-to-end flow', async (t) => {
   t.after(() => server.close());
 
   const { c, ws } = await signup(base, 'owner@example.com', { workspaceName: 'Công ty ABC' });
+  verifyEmail(db, 'owner@example.com');
   assert.equal(ws.name, 'Công ty ABC');
   assert.equal(ws.role, 'owner');
 

@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { startServer, client } = require('./helpers');
+const { startServer, client, verifyEmail } = require('./helpers');
 
 test('lead management: attribution, status, notes, filters', async (t) => {
   const { server, base, db } = await startServer();
@@ -10,6 +10,7 @@ test('lead management: attribution, status, notes, filters', async (t) => {
 
   const c = client(base);
   await c('POST', '/api/auth/signup', { name: 'Chủ', email: 'owner@example.com', password: 'matkhau123' });
+  verifyEmail(db, 'owner@example.com');
   const wsId = (await c('GET', '/api/auth/me')).data.workspaces[0].id;
   db.prepare("UPDATE workspaces SET plan = 'pro' WHERE id = ?").run(wsId);
   const site = (await c('POST', `/api/workspaces/${wsId}/sites`, { name: 'Shop', subdomain: 'shop', template: 'leadgen' })).data;
