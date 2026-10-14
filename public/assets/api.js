@@ -8,7 +8,8 @@ window.HTC = (() => {
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
-    if (res.status === 401 && !location.pathname.startsWith('/app/login') && !location.pathname.startsWith('/app/signup')) {
+    const publicPage = ['/app/login', '/app/signup', '/app/forgot', '/app/reset', '/app/invite'].some((p) => location.pathname.startsWith(p));
+    if (res.status === 401 && !publicPage) {
       location.href = '/app/login';
       throw new Error('Unauthorized');
     }

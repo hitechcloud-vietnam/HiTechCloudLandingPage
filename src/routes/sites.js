@@ -4,29 +4,13 @@ const express = require('express');
 const { workspacePlan } = require('../plans');
 const { renderPage, renderMessage } = require('../render');
 const { monthStart } = require('./api');
+const { createRateLimiter } = require('../ratelimit');
 
 // Pages served from the dashboard origin get an opaque origin via CSP sandbox,
 // so customer-authored scripts can never act on the dashboard session.
 const SANDBOX_CSP = 'sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals';
 
 const BOT_RE = /bot|crawl|spider|slurp|preview|monitor|curl|wget/i;
-
-function createRateLimiter({ windowMs, max }) {
-  const hits = new Map();
-  return (key) => {
-    const now = Date.now();
-    const entry = hits.get(key);
-    if (!entry || now - entry.start > windowMs) {
-      hits.set(key, { start: now, count: 1 });
-      if (hits.size > 10000) {
-        for (const [k, v] of hits) if (now - v.start > windowMs) hits.delete(k);
-      }
-      return true;
-    }
-    entry.count += 1;
-    return entry.count <= max;
-  };
-}
 
 function createSitesRouter({ db, config, access }) {
   const r = express.Router();
@@ -36,6 +20,7 @@ function createSitesRouter({ db, config, access }) {
     res.status(status);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     if (sandbox) res.setHeader('Content-Security-Policy', SANDBOX_CSP);
     res.send(html);
   }

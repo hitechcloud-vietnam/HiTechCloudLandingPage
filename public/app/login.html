@@ -20,6 +20,7 @@
       <input id="password" name="password" type="password" autocomplete="current-password" required>
       <button class="btn" style="width:100%;margin-top:20px" type="submit">Đăng nhập</button>
     </form>
+    <p class="muted"><a href="/app/forgot">Quên mật khẩu?</a></p>
     <p class="muted">Chưa có tài khoản? <a href="/app/signup">Đăng ký miễn phí</a></p>
   </div>
 </div>
@@ -30,7 +31,8 @@
     HTC.$('#error').textContent = '';
     try {
       await HTC.api('/auth/login', { method: 'POST', body: HTC.formData(e.target) });
-      location.href = '/app/';
+      const next = new URLSearchParams(location.search).get('next') || '';
+      location.href = next.startsWith('/app/') ? next : '/app/';
     } catch (err) {
       HTC.$('#error').textContent = err.message;
     }

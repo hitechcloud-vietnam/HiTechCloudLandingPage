@@ -19,6 +19,9 @@ const config = {
   superAdmins: list(process.env.SUPERADMIN_EMAILS),
   sessionDays: Number(process.env.SESSION_DAYS || 30),
   secureCookies: process.env.NODE_ENV === 'production',
+  // smtp(s)://user:pass@host:port — leave empty to log emails to stdout.
+  smtpUrl: process.env.SMTP_URL || '',
+  mailFrom: process.env.MAIL_FROM || 'HiTechCloud <no-reply@hitechcloud.vn>',
   payments: {
     payos: {
       clientId: process.env.PAYOS_CLIENT_ID,
