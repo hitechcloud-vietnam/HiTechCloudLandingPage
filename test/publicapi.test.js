@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { startServer, client } = require('./helpers');
+const { startServer, client, verifyEmail } = require('./helpers');
 
 // Bearer-token client for /api/v1 (no cookies, no Origin header).
 function bearer(base, key) {
@@ -25,6 +25,7 @@ function bearer(base, key) {
 async function setupWorkspace(base, db, email, subdomain) {
   const c = client(base);
   await c('POST', '/api/auth/signup', { name: 'Chủ', email, password: 'matkhau123' });
+  verifyEmail(db, email);
   const wsId = (await c('GET', '/api/auth/me')).data.workspaces[0].id;
   db.prepare("UPDATE workspaces SET plan = 'pro' WHERE id = ?").run(wsId);
   const site = (await c('POST', `/api/workspaces/${wsId}/sites`, { name: 'Shop', subdomain, template: 'leadgen' })).data;
