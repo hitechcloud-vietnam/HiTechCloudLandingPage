@@ -3,3 +3,6 @@ data/
 *.db
 *.db-*
 .env
+playwright-report/
+test-results/
+e2e/server.log

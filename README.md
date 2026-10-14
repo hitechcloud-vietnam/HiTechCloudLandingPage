@@ -40,7 +40,8 @@ Yêu cầu Node.js 22.13 trở lên (dùng SQLite tích hợp sẵn `node:sqlite
 ```bash
 npm install
 npm start            # http://localhost:3000
-npm test             # chạy 79 test (API, thanh toán, tên miền, A/B…)
+npm test             # test API/đơn vị (node:test, thư mục test/)
+npm run e2e          # test E2E trên trình duyệt (Playwright, thư mục e2e/)
 ```
 
 Bắt đầu tại `http://localhost:3000/app/signup`.
@@ -177,6 +178,29 @@ Mỗi lần gửi form đi qua các bước sau (`src/leadGuard.js`):
 6. **Lead trùng:** cùng SĐT hoặc email trên cùng website trong `dedupeHours` giờ (mặc định 24, 0–168, 0 = tắt) → vẫn lưu, đánh dấu "Trùng #id", không gửi thông báo lại.
 
 Điểm, cờ và lead gốc được lưu ở `leads.spam_score`, `leads.flags_json`, `leads.duplicate_of` và trả về trong API (`spamScore`, `flags`, `duplicateOf`).
+
+## Kiểm thử E2E
+
+Bộ test trình duyệt dùng [Playwright](https://playwright.dev) (`@playwright/test`, Chromium) nằm trong thư mục `e2e/`, tách khỏi `test/` để `npm test` không chạy nhầm.
+
+```bash
+npx playwright install --with-deps chromium   # lần đầu (máy đã có trình duyệt Playwright thì bỏ qua)
+npm run e2e                                   # chạy toàn bộ
+npm run e2e -- editor.spec.js                 # một file
+npm run e2e -- --project=desktop-chrome --headed
+npx playwright show-report                    # xem báo cáo HTML (playwright-report/)
+```
+
+- `e2e/start-server.js` khởi động chính ứng dụng trên một cổng trống với cơ sở dữ liệu và thư mục ảnh tạm (tự xóa khi kết thúc), `SUPERADMIN_EMAILS=root@e2e.test`, không cấu hình SMTP/cổng thanh toán/S3. Mọi output của server được ghi thêm vào `e2e/server.log`; test đọc email trong log (dòng `[mail] to=…`) để lấy liên kết xác minh email và đặt lại mật khẩu — tức là đi đúng luồng thật.
+- Mỗi test giả lập một IP riêng qua `X-Forwarded-For` (server tin proxy loopback) để giới hạn tần suất đăng ký/đăng nhập không ảnh hưởng giữa các test.
+- Hai project: `desktop-chrome` chạy tất cả; `mobile-chrome` (Pixel 5) chạy các test gắn thẻ `@mobile`.
+- Các luồng được kiểm tra:
+  - `auth.spec.js`: đăng ký → email xác minh → banner biến mất; đăng xuất, đăng nhập (sai/đúng mật khẩu); quên mật khẩu → email → đặt lại mật khẩu.
+  - `editor.spec.js`: tạo website từ mẫu → mở trình thiết kế → sửa tiêu đề → lưu (“Đã lưu”) → tải ảnh qua Asset Manager → xuất bản → kiểm tra `/p/<tên-miền-phụ>`; tài khoản chưa xác minh không xuất bản được.
+  - `leads.spec.js`: gửi form trên trang đã xuất bản kèm UTM → banner cảm ơn → lead hiện trong tab “Khách hàng tiềm năng” với nguồn → đổi trạng thái, lọc.
+  - `billing.spec.js`: bảng giá, chặn tính năng Pro ở gói miễn phí, super-admin cấp gói Pro trong trang quản trị → tên miền riêng (hướng dẫn DNS) và A/B testing hoạt động. Thanh toán qua cổng thật không chạy ở đây (đã có test API với gateway giả trong `test/billing.test.js`).
+  - `a11y.spec.js`: trang chủ, đăng nhập, đăng ký, quên mật khẩu, bảng điều khiển ở 375px: không lỗi console, không cuộn ngang, mọi ô nhập liệu đang hiển thị đều có nhãn/`aria-label`, có `lang="vi"`.
+- Trên CI (job `e2e` trong `.github/workflows/ci.yml`) test được chạy lại 1 lần nếu lỗi, lưu trace ở lần chạy lại và tải lên artifact `playwright-report` (kèm `test-results/`, `e2e/server.log`) khi thất bại.
 
 ## Kiến trúc
 

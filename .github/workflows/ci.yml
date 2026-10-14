@@ -27,8 +27,33 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Syntax check
-        run: find src test -name '*.js' -print0 | xargs -0 -n1 node --check
+        run: find src test e2e -name '*.js' -print0 | xargs -0 -n1 node --check
       - run: npm test
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+            e2e/server.log
+          retention-days: 14
 
   docker:
     name: Docker build
