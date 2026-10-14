@@ -14,6 +14,7 @@ const PLANS = {
     customDomain: false,
     removeBranding: false,
     customCode: false,
+    abTesting: false,
   },
   pro: {
     id: 'pro',
@@ -27,6 +28,7 @@ const PLANS = {
     customDomain: true,
     removeBranding: true,
     customCode: true,
+    abTesting: true,
   },
   business: {
     id: 'business',
@@ -40,6 +42,7 @@ const PLANS = {
     customDomain: true,
     removeBranding: true,
     customCode: true,
+    abTesting: true,
   },
 };
 

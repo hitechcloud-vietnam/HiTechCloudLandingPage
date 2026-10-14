@@ -130,6 +130,19 @@ CREATE TABLE IF NOT EXISTS page_versions (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS ab_tests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+  variant_page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+  split INTEGER NOT NULL CHECK (split BETWEEN 1 AND 99),
+  status TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'stopped')),
+  winner TEXT,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  stopped_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_ab_page ON ab_tests(page_id, status);
 CREATE INDEX IF NOT EXISTS idx_assets_workspace ON assets(workspace_id, id);
 CREATE INDEX IF NOT EXISTS idx_versions_page ON page_versions(page_id, id);
 CREATE INDEX IF NOT EXISTS idx_orders_workspace ON orders(workspace_id, id);
