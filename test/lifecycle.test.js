@@ -355,3 +355,12 @@ test('suspended and deleted users never get lifecycle email', async (t) => {
   assert.equal(lifecycle.sendWeeklyDigests({ db, mailer, config, now }), 1);
   assert.deepEqual(mailer.outbox.map((m) => m.to), ['bad@example.com', 'bad@example.com', 'bad@example.com']);
 });
+
+test('unsubscribe endpoint is rate limited per IP', async (t) => {
+  const { server, base } = await startServer();
+  t.after(() => server.close());
+  const statuses = [];
+  for (let i = 0; i < 21; i++) statuses.push((await fetch(`${base}/email/unsubscribe?token=sai`)).status);
+  assert.deepEqual([...new Set(statuses.slice(0, 20))], [400]);
+  assert.equal(statuses[20], 429);
+});

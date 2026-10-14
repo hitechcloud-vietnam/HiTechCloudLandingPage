@@ -6,6 +6,7 @@ const { HttpError } = require('../access');
 const { requireUser } = require('../auth');
 const { escapeHtml } = require('../render');
 const lifecycle = require('../lifecycle');
+const { createRateLimiter } = require('../ratelimit');
 
 // Dashboard API: onboarding checklist and per-user email preferences (mounted at /api).
 function createLifecycleRouter({ db, access }) {
@@ -53,7 +54,9 @@ function page(title, message, appUrl, status) {
 // GET is the link in the email body; POST is RFC 8058 List-Unsubscribe-Post.
 function createUnsubscribeRouter({ db, config }) {
   const r = express.Router();
+  const limiter = createRateLimiter({ windowMs: 60_000, max: 20 });
   const unsubscribe = (req, res) => {
+    if (!limiter(req.ip)) return res.status(429).type('text/plain').send('Bạn thao tác quá nhanh, vui lòng thử lại sau');
     const t = lifecycle.verifyUnsubscribeToken(config, req.query.token);
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Robots-Tag', 'noindex');
