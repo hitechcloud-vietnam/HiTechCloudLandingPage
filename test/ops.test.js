@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { startServer, client, getWithHost, verifyEmail } = require('./helpers');
+const { startServer, client, getWithHost, verifyEmail, APP_URL } = require('./helpers');
 const { createMailer } = require('../src/mailer');
 const { sendExpiryReminders } = require('../src/jobs');
 
@@ -31,6 +31,11 @@ test('custom domain verification and TLS ask', async (t) => {
   await c('POST', `/api/pages/${page.id}/publish`, {});
 
   const tlsAsk = async (domain) => (await fetch(`${base}/_htc/tls-ask?domain=${domain}`)).status;
+
+  await t.test('the dashboard host itself always gets a certificate', async () => {
+    assert.equal(await tlsAsk(new URL(APP_URL).hostname), 200);
+    assert.equal(await tlsAsk('not-ours.example.vn'), 404);
+  });
 
   await t.test('unverified domain is not served and gets no certificate', async () => {
     const r = await c('PATCH', `/api/sites/${site.id}`, { customDomain: 'khuyenmai.congty.vn' });

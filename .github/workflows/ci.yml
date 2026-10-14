@@ -61,3 +61,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t hitechcloud-landingpage:ci .
+
+  deploy:
+    name: Deploy test (Docker Compose + Caddy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shellcheck deploy scripts
+        run: shellcheck -x deploy/*.sh
+      - name: Production stack, smoke test, backup and restore
+        run: deploy/test-stack.sh

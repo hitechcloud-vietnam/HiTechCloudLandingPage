@@ -2,6 +2,22 @@
 
 Các thay đổi đáng chú ý của HiTechCloud LandingPage. Phiên bản theo [SemVer](https://semver.org/lang/vi/).
 
+## [v1.0.1] - 2026-10-14
+
+### Sửa lỗi
+- `/_htc/tls-ask` luôn chấp nhận host của `APP_URL`: tùy cách Caddy gom chính sách cấp chứng chỉ, tên miền dashboard có thể đi qua bước hỏi on-demand và bị từ chối, khiến dashboard không có HTTPS (phát hiện khi chạy thử stack thật).
+- Tài liệu triển khai: lệnh lấy liên kết xác minh email (token dạng base64url), lệnh lọc log bằng `jq` (bỏ tiền tố của `docker compose logs`, bỏ qua dòng không phải JSON), lệnh `du`/`rm` trong container, lệnh sao lưu khi chạy không dùng Docker.
+
+### Bộ công cụ triển khai `deploy/`
+- `setup-server.sh` (chuẩn bị Ubuntu/Debian, có `--dry-run`), `init-env.sh` (tạo `.env` với khóa ngẫu nhiên), `preflight.sh` (kiểm tra cấu hình, DNS, cổng, tài nguyên), `smoke-test.sh` (kiểm tra bản triển khai đang chạy).
+- `backup.sh` (sao lưu trực tuyến + kiểm tra toàn vẹn + checksum + xoay vòng + rclone), `restore.sh` (khôi phục an toàn: kiểm tra trước khi thay, giữ dữ liệu cũ, tự khởi động lại khi lỗi), `update.sh` (cập nhật từ mã nguồn hoặc image, quay lui tự động).
+- `docker-compose.yml` hỗ trợ image dựng sẵn qua `APP_IMAGE`; mẫu systemd/Caddy/sao lưu cho cách chạy không dùng Docker trong `deploy/native/`.
+- CI: job **Deploy test** chạy `shellcheck` và `deploy/test-stack.sh` (stack app + Caddy thật trên HTTPS: smoke test, luồng người dùng, sao lưu → khôi phục, từ chối bản sao lưu hỏng).
+
+### Tài liệu
+- `docs/DEPLOYMENT.md`: mục Cài đặt nhanh, dùng image dựng sẵn, mục 21 kiểm thử triển khai.
+- `docs/RUNBOOK.md`: quy trình xử lý sự cố (dashboard sập, 5xx, HTTPS website khách, đầy đĩa, khôi phục, quay lui, thanh toán, email, nội dung vi phạm, đổi khóa, lộ dữ liệu cá nhân, chuyển máy chủ, việc định kỳ).
+
 ## [v1.0.0] - 2026-10-14
 
 Bản phát hành đầu tiên.

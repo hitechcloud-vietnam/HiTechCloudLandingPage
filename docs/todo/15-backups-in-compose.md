@@ -6,6 +6,9 @@
 
 ## Bối cảnh
 
+Đã có `deploy/backup.sh` / `deploy/restore.sh` (được CI kiểm thử) và hướng dẫn cron trong `docs/DEPLOYMENT.md` mục 13. Việc còn lại là đóng gói lịch chạy vào chính docker-compose để không phải cài cron trên máy chủ.
+
+
 Sao lưu hiện dựa vào script và cron trên máy chủ (`docs/DEPLOYMENT.md` mục 13). Dễ quên cài khi dựng máy chủ mới.
 
 ## Việc cần làm

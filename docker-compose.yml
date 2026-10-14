@@ -1,9 +1,13 @@
 # Production stack: app + Caddy (automatic HTTPS, on-demand TLS for customer domains).
 # 1. cp .env.example .env and fill it in (APP_URL=https://$APP_DOMAIN)
 # 2. DNS: A record APP_DOMAIN and *.PUBLISH_ROOT_DOMAIN -> this server; CNAME_TARGET -> this server
-# 3. docker compose up -d --build
+# 3. docker compose up -d --build   (full guide: docs/DEPLOYMENT.md, tools: deploy/*.sh)
 services:
   app:
+    # Build from source (default), or run a released image without building:
+    #   APP_IMAGE=ghcr.io/hitechcloud-vietnam/hitechcloudlandingpage:v1.0.0 in .env, then
+    #   docker compose pull app && docker compose up -d --no-build
+    image: ${APP_IMAGE:-hitechcloud-landingpage:local}
     build: .
     restart: unless-stopped
     env_file: .env

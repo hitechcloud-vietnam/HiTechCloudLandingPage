@@ -1,0 +1,28 @@
+# systemd unit for running HiTechCloud LandingPage without Docker (docs/DEPLOYMENT.md section 15).
+# Install: sudo cp deploy/native/hitechcloud.service /etc/systemd/system/ && sudo systemctl daemon-reload
+#          sudo systemctl enable --now hitechcloud
+[Unit]
+Description=HiTechCloud LandingPage
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=htc
+Group=htc
+WorkingDirectory=/opt/hitechcloud
+# .env must set DB_FILE=/var/lib/hitechcloud/hitechcloud.db, UPLOADS_DIR=/var/lib/hitechcloud/uploads
+# and PORT=3000: values from EnvironmentFile override Environment= lines.
+EnvironmentFile=/opt/hitechcloud/.env
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning src/server.js
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=15
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/hitechcloud
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
