@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đăng ký · HiTechCloud LandingPage</title>
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <a class="brand" href="/">HiTech<span>Cloud</span></a>
+    <h1>Tạo tài khoản</h1>
+    <p class="muted">Miễn phí, không cần thẻ thanh toán.</p>
+    <div class="alert" id="error"></div>
+    <form id="form">
+      <label for="name">Họ và tên</label>
+      <input id="name" name="name" autocomplete="name" required>
+      <label for="workspaceName">Tên doanh nghiệp / workspace</label>
+      <input id="workspaceName" name="workspaceName" placeholder="VD: Công ty ABC">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="email" required>
+      <label for="password">Mật khẩu</label>
+      <input id="password" name="password" type="password" minlength="8" autocomplete="new-password" required>
+      <div class="hint">Tối thiểu 8 ký tự.</div>
+      <button class="btn" style="width:100%;margin-top:20px" type="submit">Đăng ký</button>
+    </form>
+    <p class="muted">Đã có tài khoản? <a href="/app/login">Đăng nhập</a></p>
+  </div>
+</div>
+<script src="/assets/api.js"></script>
+<script>
+  HTC.$('#form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    HTC.$('#error').textContent = '';
+    try {
+      await HTC.api('/auth/signup', { method: 'POST', body: HTC.formData(e.target) });
+      location.href = '/app/';
+    } catch (err) {
+      HTC.$('#error').textContent = err.message;
+    }
+  });
+</script>
+</body>
+</html>
