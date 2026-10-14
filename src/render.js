@@ -1,5 +1,7 @@
 'use strict';
 
+const { trackingHead, leadEvents } = require('./siteSettings');
+
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;',
@@ -23,9 +25,16 @@ function rewriteForms(html, siteId, pageSlug) {
 
 const BRANDING = `<a href="https://hitechcloud.vn" target="_blank" rel="noopener" style="position:fixed;right:12px;bottom:12px;z-index:2147483647;background:#0f172a;color:#fff;font:12px/1 system-ui,sans-serif;padding:8px 12px;border-radius:999px;text-decoration:none;opacity:.85">Tạo bởi HiTechCloud</a>`;
 
-function renderPage({ page, site, html, css, showBranding, notice }) {
+function renderPage({ page, site, html, css, showBranding, notice, settings = {}, canonicalUrl = '' }) {
   const safeCss = String(css || '').replace(/<\/style/gi, '<\\/style');
   const body = rewriteForms(String(html || ''), site.id, page.slug);
+  const head = [
+    settings.faviconUrl ? `<link rel="icon" href="${escapeHtml(settings.faviconUrl)}">` : '',
+    page.og_image ? `<meta property="og:image" content="${escapeHtml(page.og_image)}">` : '',
+    canonicalUrl ? `<link rel="canonical" href="${escapeHtml(canonicalUrl)}"><meta property="og:url" content="${escapeHtml(canonicalUrl)}">` : '',
+    trackingHead(settings),
+    settings.customHead || '',
+  ].filter(Boolean).join('\n');
   return `<!doctype html>
 <html lang="vi">
 <head>
@@ -35,13 +44,17 @@ function renderPage({ page, site, html, css, showBranding, notice }) {
 <meta name="description" content="${escapeHtml(page.meta_description)}">
 <meta property="og:title" content="${escapeHtml(page.title)}">
 <meta property="og:description" content="${escapeHtml(page.meta_description)}">
+<meta property="og:type" content="website">
 <meta name="generator" content="HiTechCloud LandingPage">
+${head}
 <style>${safeCss}</style>
 </head>
 <body>
 ${notice ? `<div style="background:#16a34a;color:#fff;text-align:center;padding:12px;font-family:system-ui,sans-serif">${escapeHtml(notice)}</div>` : ''}
 ${body}
 ${showBranding ? BRANDING : ''}
+${notice ? leadEvents(settings) : ''}
+${settings.customBody || ''}
 </body>
 </html>`;
 }

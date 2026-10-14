@@ -5,6 +5,14 @@ const { workspacePlan } = require('../plans');
 const { renderPage, renderMessage } = require('../render');
 const { monthStart } = require('./api');
 const { createRateLimiter } = require('../ratelimit');
+const { parse: parseSettings } = require('../siteSettings');
+
+// Public base URL of a site, used for canonical links and sitemaps.
+function siteBaseUrl(site, config) {
+  if (site.custom_domain) return `https://${site.custom_domain}`;
+  if (config.publishRootDomain) return `https://${site.subdomain}.${config.publishRootDomain}`;
+  return `${config.appUrl}/p/${site.subdomain}`;
+}
 
 // Pages served from the dashboard origin get an opaque origin via CSP sandbox,
 // so customer-authored scripts can never act on the dashboard session.
@@ -12,7 +20,7 @@ const SANDBOX_CSP = 'sandbox allow-scripts allow-forms allow-popups allow-popups
 
 const BOT_RE = /bot|crawl|spider|slurp|preview|monitor|curl|wget/i;
 
-function createSitesRouter({ db, config, access }) {
+function createSitesRouter({ db, config, access, notifier }) {
   const r = express.Router();
   const leadLimiter = createRateLimiter({ windowMs: 60_000, max: 10 });
 
@@ -47,6 +55,8 @@ function createSitesRouter({ db, config, access }) {
           css: page.published_css,
           showBranding: !workspacePlan(ws).removeBranding,
           notice: req.query.submitted === '1' ? 'Cảm ơn bạn! Thông tin đã được gửi thành công.' : '',
+          settings: parseSettings(site),
+          canonicalUrl: `${siteBaseUrl(site, config)}/${page.slug === 'index' ? '' : page.slug}`,
         }),
       },
       sandbox
@@ -103,7 +113,35 @@ function createSitesRouter({ db, config, access }) {
       JSON.stringify(data),
       req.ip
     );
+    if (notifier) notifier.leadCreated({ site, pageSlug, data });
     res.redirect(303, back);
+  });
+
+  function sitemap(site) {
+    const base = siteBaseUrl(site, config);
+    const pages = db.prepare('SELECT slug, published_at FROM pages WHERE site_id = ? AND published_at IS NOT NULL ORDER BY id').all(site.id);
+    const urls = pages
+      .map((p) => `<url><loc>${base}/${p.slug === 'index' ? '' : p.slug}</loc><lastmod>${p.published_at.slice(0, 10)}</lastmod></url>`)
+      .join('');
+    return `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`;
+  }
+
+  function sendSeoFile(res, site, file) {
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    if (file === 'sitemap.xml') return res.type('application/xml').send(sitemap(site));
+    res.type('text/plain').send(`User-agent: *\nAllow: /\nSitemap: ${siteBaseUrl(site, config)}/sitemap.xml\n`);
+  }
+
+  r.get(['/sitemap.xml', '/robots.txt'], (req, res, next) => {
+    const site = siteForHost(req.hostname);
+    if (!site) return next();
+    sendSeoFile(res, site, req.path.slice(1));
+  });
+
+  r.get(['/p/:subdomain/sitemap.xml', '/p/:subdomain/robots.txt'], (req, res) => {
+    const site = db.prepare('SELECT * FROM sites WHERE subdomain = ?').get(String(req.params.subdomain).toLowerCase());
+    if (!site) return res.status(404).end();
+    sendSeoFile(res, site, req.path.split('/').pop());
   });
 
   // Custom domains and <subdomain>.<PUBLISH_ROOT_DOMAIN>.
@@ -131,10 +169,10 @@ function createSitesRouter({ db, config, access }) {
     }
     const { page, site } = found;
     res.setHeader('Cache-Control', 'no-store');
-    sendHtml(res, { html: renderPage({ page, site, html: page.draft_html, css: page.draft_css, showBranding: false }) }, true);
+    sendHtml(res, { html: renderPage({ page, site, html: page.draft_html, css: page.draft_css, showBranding: false, settings: parseSettings(site) }) }, true);
   });
 
   return r;
 }
 
-module.exports = { createSitesRouter, SANDBOX_CSP };
+module.exports = { createSitesRouter, SANDBOX_CSP, siteBaseUrl };

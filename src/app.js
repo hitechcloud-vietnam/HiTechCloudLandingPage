@@ -9,6 +9,7 @@ const { createSitesRouter } = require('./routes/sites');
 const { createBilling } = require('./billing');
 const { createMailer } = require('./mailer');
 const { createAccountRouter } = require('./routes/account');
+const { createNotifier } = require('./notify');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -23,6 +24,7 @@ function createApp({ db, config }) {
 
   const mailer = config.mailer || createMailer(config);
   const billing = createBilling({ db, config, mailer });
+  const notifier = createNotifier({ db, config, mailer });
   app.locals.mailer = mailer;
 
   app.get('/healthz', (_req, res) => {
@@ -40,7 +42,7 @@ function createApp({ db, config }) {
   app.use(billing.router);
 
   // Published customer sites (custom domains, subdomains, /p/, /preview, lead capture).
-  app.use(createSitesRouter({ db, config, access }));
+  app.use(createSitesRouter({ db, config, access, notifier }));
 
   // Security headers for the dashboard, editor and API (published pages set their own).
   app.use((_req, res, next) => {
@@ -65,7 +67,7 @@ function createApp({ db, config }) {
   });
   app.use('/api', express.json({ limit: '5mb' }));
   app.use('/api', createAccountRouter({ db, config, mailer, sessions }));
-  app.use('/api', createApiRouter({ db, sessions, access, billing, mailer, config }).router);
+  app.use('/api', createApiRouter({ db, sessions, access, billing, mailer, config, notifier }).router);
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Không tìm thấy' }));
 
   // Editor vendor assets (GrapesJS + plugins BSD-3-Clause, Font Awesome OFL/MIT).

@@ -128,9 +128,12 @@ function openDb(file) {
 function migrate(db) {
   const hasColumn = (table, column) =>
     db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
-  if (!hasColumn('workspaces', 'plan_expires_at')) {
-    db.exec('ALTER TABLE workspaces ADD COLUMN plan_expires_at TEXT');
-  }
+  const add = (table, column, ddl) => {
+    if (!hasColumn(table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+  };
+  add('workspaces', 'plan_expires_at', 'TEXT');
+  add('sites', 'settings_json', "TEXT NOT NULL DEFAULT '{}'");
+  add('pages', 'og_image', "TEXT NOT NULL DEFAULT ''");
 }
 
 // Runs fn inside a transaction, rolling back on error.
