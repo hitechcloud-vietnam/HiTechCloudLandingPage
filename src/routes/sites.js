@@ -18,6 +18,7 @@ function siteBaseUrl(site, config) {
 // so customer-authored scripts can never act on the dashboard session.
 const SANDBOX_CSP = 'sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals';
 
+const SOURCE_FIELDS = new Set(['_utm_source', '_utm_medium', '_utm_campaign', '_utm_term', '_utm_content', '_ref']);
 const BOT_RE = /bot|crawl|spider|slurp|preview|monitor|curl|wget/i;
 
 function createSitesRouter({ db, config, access, notifier }) {
@@ -98,8 +99,11 @@ function createSitesRouter({ db, config, access, notifier }) {
     }
 
     const data = {};
-    for (const [k, v] of Object.entries(fields).slice(0, 30)) {
-      data[String(k).slice(0, 64)] = String(Array.isArray(v) ? v.join(', ') : v).slice(0, 2000);
+    const source = {};
+    for (const [k, v] of Object.entries(fields).slice(0, 40)) {
+      const value = String(Array.isArray(v) ? v.join(', ') : v);
+      if (SOURCE_FIELDS.has(k)) source[k.slice(1)] = value.slice(0, 500);
+      else if (!k.startsWith('_')) data[String(k).slice(0, 64)] = value.slice(0, 2000);
     }
     if (!Object.keys(data).length) return res.redirect(303, back);
 
@@ -113,10 +117,13 @@ function createSitesRouter({ db, config, access, notifier }) {
     if (used >= workspacePlan(ws).maxLeadsPerMonth) {
       return sendHtml(res, renderMessage('Tạm ngưng nhận đăng ký', 'Website đã đạt giới hạn tiếp nhận trong tháng.', 503));
     }
-    db.prepare('INSERT INTO leads (site_id, page_slug, data_json, ip) VALUES (?, ?, ?, ?)').run(
+    const page = db.prepare('SELECT id FROM pages WHERE site_id = ? AND slug = ?').get(site.id, pageSlug);
+    db.prepare('INSERT INTO leads (site_id, page_slug, page_id, data_json, source_json, ip) VALUES (?, ?, ?, ?, ?, ?)').run(
       site.id,
       pageSlug,
+      page ? page.id : null,
       JSON.stringify(data),
+      JSON.stringify(source),
       req.ip
     );
     if (notifier) notifier.leadCreated({ site, pageSlug, data });
