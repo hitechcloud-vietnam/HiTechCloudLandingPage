@@ -14,8 +14,12 @@ const FIELDS = {
   faviconUrl: { re: /^https:\/\/[^\s"'<>]{4,500}$/, label: 'Favicon URL (https)' },
   webhookUrl: { re: /^https:\/\/[^\s"'<>]{4,500}$/, label: 'Webhook URL (https)' },
   telegramChatId: { re: /^-?\d{3,20}$|^@[A-Za-z0-9_]{5,32}$/, label: 'Telegram chat ID' },
-  telegramBotToken: { re: /^\d{5,12}:[A-Za-z0-9_-]{30,50}$/, label: 'Telegram bot token', secret: true },
+  telegramBotToken: { re: /^\d{5,12}:[A-Za-z0-9_-]{30,50}$/, label: 'Telegram bot token', secret: 'hasTelegramToken' },
+  slackWebhookUrl: { re: /^https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/_-]+$/, label: 'Slack webhook URL (https://hooks.slack.com/services/…)', secret: 'hasSlackWebhook' },
+  discordWebhookUrl: { re: /^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+$/, label: 'Discord webhook URL (https://discord.com/api/webhooks/…)', secret: 'hasDiscordWebhook' },
+  sheetsWebhookUrl: { re: /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/, label: 'Google Sheets (Apps Script) URL (https://script.google.com/macros/s/…/exec)', secret: 'hasSheetsWebhook' },
 };
+const MAX_FIELD = 500;
 const MAX_CUSTOM_CODE = 20000;
 const EMAIL_RE = /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/;
 
@@ -30,8 +34,11 @@ function parse(site) {
 // Shape returned to the dashboard: secrets are reported as present, not echoed.
 function publicSettings(settings) {
   const out = { ...settings };
-  delete out.telegramBotToken;
-  out.hasTelegramToken = !!settings.telegramBotToken;
+  for (const [key, def] of Object.entries(FIELDS)) {
+    if (!def.secret) continue;
+    delete out[key];
+    out[def.secret] = !!settings[key];
+  }
   return out;
 }
 
@@ -47,7 +54,7 @@ function applyUpdate(current, input, plan) {
       delete next[key];
       continue;
     }
-    if (!def.re.test(value)) throw new HttpError(400, `${def.label} không hợp lệ`);
+    if (value.length > MAX_FIELD || !def.re.test(value)) throw new HttpError(400, `${def.label} không hợp lệ`);
     next[key] = value;
   }
 

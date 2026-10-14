@@ -111,6 +111,42 @@
           <div class="hint" id="tg-hint">Tạo bot qua @BotFather.</div></div>
         <div><label for="i-tgchat">Telegram chat ID</label><input id="i-tgchat" name="telegramChatId" placeholder="-100… hoặc @kenh"></div>
       </div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
+        <div><label for="i-slack">Slack Incoming Webhook</label><input id="i-slack" name="slackWebhookUrl" autocomplete="off">
+          <div class="hint">Slack → Apps → Incoming Webhooks → Add to channel, dán URL hooks.slack.com.</div></div>
+        <div><label for="i-discord">Discord Webhook</label><input id="i-discord" name="discordWebhookUrl" autocomplete="off">
+          <div class="hint">Cài đặt kênh → Tích hợp → Webhook → Sao chép URL webhook.</div></div>
+      </div>
+      <div><label for="i-sheets">Google Sheets (URL Web App của Apps Script)</label><input id="i-sheets" name="sheetsWebhookUrl" autocomplete="off">
+        <details class="hint" style="margin-top:4px">
+          <summary style="cursor:pointer">Hướng dẫn kết nối Google Sheets</summary>
+          <ol style="margin:6px 0;padding-left:18px">
+            <li>Mở Google Sheet → Tiện ích mở rộng → Apps Script, dán đoạn mã dưới đây rồi Lưu.</li>
+            <li>Triển khai → Tùy chọn triển khai mới → Loại: Ứng dụng web; Thực thi với tư cách: Tôi; Ai có quyền truy cập: Bất kỳ ai.</li>
+            <li>Sao chép URL dạng <code>https://script.google.com/macros/s/…/exec</code> và dán vào ô trên.</li>
+          </ol>
+          <pre style="white-space:pre;overflow:auto;max-height:240px;font-size:12px;background:rgba(127,127,127,.1);padding:8px;border-radius:6px;margin:0"><code>function doPost(e) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var row = JSON.parse(e.postData.contents);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+    var headers = sheet.getLastColumn()
+      ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+      : [];
+    Object.keys(row).forEach(function (k) {
+      if (headers.indexOf(k) === -1) headers.push(k);
+    });
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.appendRow(headers.map(function (h) {
+      return row[h] === undefined ? '' : row[h];
+    }));
+    return ContentService.createTextOutput('ok');
+  } finally {
+    lock.releaseLock();
+  }
+}</code></pre>
+        </details></div>
 
       <h3 style="margin:8px 0 0">Mã tùy chỉnh <span class="badge badge-primary">Pro</span></h3>
       <div><label for="i-head">Chèn vào &lt;head&gt;</label><textarea id="i-head" name="customHead" rows="3" placeholder="&lt;script&gt;…&lt;/script&gt;" style="font-family:monospace"></textarea></div>
@@ -188,6 +224,15 @@ async function load() {
   f.elements.notifyEmails.value = (st.notifyEmails || []).join(', ');
   f.elements.telegramBotToken.value = '';
   f.elements.telegramBotToken.placeholder = st.hasTelegramToken ? '•••••• (đã lưu, để trống để giữ nguyên, nhập - để xóa)' : '123456:ABC…';
+  const secretUrls = {
+    slackWebhookUrl: [st.hasSlackWebhook, 'https://hooks.slack.com/services/…'],
+    discordWebhookUrl: [st.hasDiscordWebhook, 'https://discord.com/api/webhooks/…'],
+    sheetsWebhookUrl: [st.hasSheetsWebhook, 'https://script.google.com/macros/s/…/exec'],
+  };
+  for (const [name, [saved, example]] of Object.entries(secretUrls)) {
+    f.elements[name].value = '';
+    f.elements[name].placeholder = saved ? '•••••• (đã lưu, để trống để giữ nguyên, nhập - để xóa)' : example;
+  }
   $('#i-owners').checked = st.notifyOwners !== false;
   $('#hook-secret').textContent = st.webhookSecret ? `Chữ ký: header X-HTC-Signature = sha256=HMAC_SHA256(body, "${st.webhookSecret}")` : '';
   const canAdmin = site.role !== 'editor';
@@ -354,9 +399,9 @@ $('#notify-test').onclick = async () => {
   $('#integrations-status').textContent = 'Đang gửi…';
   try {
     const r = await api(`/sites/${siteId}/notify-test`, { method: 'POST', body: {} });
-    const names = { email: 'Email', webhook: 'Webhook', telegram: 'Telegram' };
+    const names = { email: 'Email', webhook: 'Webhook', telegram: 'Telegram', slack: 'Slack', discord: 'Discord', sheets: 'Google Sheets' };
     $('#integrations-status').textContent = Object.keys(r).length
-      ? Object.entries(r).map(([k, v]) => `${names[k]}: ${v === 'ok' ? '✓' : v}`).join(' · ')
+      ? Object.entries(r).map(([k, v]) => `${names[k] || k}: ${v === 'ok' ? '✓' : v}`).join(' · ')
       : 'Chưa cấu hình kênh nào';
   } catch (err) { showError(err); }
 };

@@ -148,7 +148,7 @@ function createSitesRouter({ db, config, access, notifier }) {
       abTest ? abTest.id : null,
       abTest ? abMatch[2] : null
     );
-    if (notifier) notifier.leadCreated({ site, pageSlug, data });
+    if (notifier) notifier.leadCreated({ site, pageSlug, data, source });
     res.redirect(303, back);
   });
 
