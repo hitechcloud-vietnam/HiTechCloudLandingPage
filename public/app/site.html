@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Website · HiTechCloud LandingPage</title>
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="container">
+    <a class="brand" href="/app/">HiTech<span>Cloud</span></a>
+    <div class="topbar-right">
+      <a class="btn btn-ghost btn-sm" href="/app/">← Bảng điều khiển</a>
+      <button class="btn btn-ghost btn-sm" id="logout">Đăng xuất</button>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+  <div class="page-head row">
+    <div>
+      <h1 id="site-name">…</h1>
+      <a class="muted" id="site-url" target="_blank" rel="noopener"></a>
+    </div>
+    <button class="btn" id="new-page-btn">+ Thêm trang</button>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="active" data-tab="pages">Trang</button>
+    <button data-tab="leads">Khách hàng tiềm năng</button>
+    <button data-tab="settings">Cài đặt</button>
+  </div>
+
+  <div class="alert" id="error"></div>
+
+  <section data-panel="pages">
+    <div class="table-wrap"><table>
+      <thead><tr><th>Trang</th><th>Đường dẫn</th><th>Trạng thái</th><th style="width:1%"></th></tr></thead>
+      <tbody id="pages"></tbody>
+    </table></div>
+  </section>
+
+  <section data-panel="leads" hidden>
+    <div class="row" style="margin-bottom:12px">
+      <span class="muted" id="lead-count"></span>
+      <a class="btn btn-ghost btn-sm" id="export-csv">Xuất CSV</a>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Thời gian</th><th>Trang</th><th>Dữ liệu</th><th></th></tr></thead>
+      <tbody id="leads"></tbody>
+    </table></div>
+  </section>
+
+  <section data-panel="settings" hidden>
+    <div class="card stack">
+      <form id="settings-form">
+        <label for="s-name">Tên website</label>
+        <input id="s-name" name="name" required>
+        <label for="s-domain">Tên miền riêng</label>
+        <input id="s-domain" name="customDomain" placeholder="vd: khuyenmai.congty.vn">
+        <div class="hint">Trỏ bản ghi CNAME của tên miền về máy chủ HiTechCloud, sau đó nhập tên miền tại đây (gói Pro trở lên).</div>
+        <button class="btn" style="margin-top:16px" type="submit">Lưu cài đặt</button>
+      </form>
+      <hr style="border:0;border-top:1px solid var(--border)">
+      <div class="row">
+        <div><strong>Xóa website</strong><div class="muted">Xóa vĩnh viễn toàn bộ trang và dữ liệu khách hàng.</div></div>
+        <button class="btn btn-danger" id="delete-site">Xóa website</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<dialog id="page-dialog">
+  <form id="page-form" method="dialog">
+    <h2>Thêm trang mới</h2>
+    <div class="alert" id="page-error"></div>
+    <label for="p-title">Tiêu đề</label>
+    <input id="p-title" name="title" required>
+    <label for="p-slug">Đường dẫn</label>
+    <input id="p-slug" name="slug" pattern="[a-z0-9]([a-z0-9\-]*[a-z0-9])?" required>
+    <label>Mẫu khởi đầu</label>
+    <div class="template-list" id="templates"></div>
+    <div class="dialog-actions">
+      <button class="btn btn-ghost" type="button" id="page-cancel">Hủy</button>
+      <button class="btn" type="submit">Tạo trang</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/assets/api.js"></script>
+<script>
+const { api, esc, $, formData, slugify } = HTC;
+const siteId = Number(new URLSearchParams(location.search).get('id'));
+let site;
+
+function showError(err) { $('#error').textContent = err ? err.message : ''; }
+
+async function load() {
+  site = await api(`/sites/${siteId}`);
+  document.title = `${site.name} · HiTechCloud LandingPage`;
+  $('#site-name').textContent = site.name;
+  const url = HTC.publicUrl(site);
+  $('#site-url').href = url;
+  $('#site-url').textContent = site.custom_domain || url;
+  $('#s-name').value = site.name;
+  $('#s-domain').value = site.custom_domain || '';
+  $('#export-csv').href = `/api/sites/${siteId}/leads?format=csv`;
+  await Promise.all([loadPages(), loadLeads()]);
+}
+
+async function loadPages() {
+  const pages = await api(`/sites/${siteId}/pages`);
+  $('#pages').innerHTML = pages.map((p) => `
+    <tr>
+      <td><strong>${esc(p.title)}</strong></td>
+      <td><a href="${esc(HTC.publicUrl(site, p.slug))}" target="_blank" rel="noopener">/${p.slug === 'index' ? '' : esc(p.slug)}</a></td>
+      <td>${p.published_at ? `<span class="badge badge-success">Đã xuất bản</span><div class="hint">${esc(p.published_at)} UTC</div>` : '<span class="badge">Bản nháp</span>'}</td>
+      <td><div class="row" style="flex-wrap:nowrap">
+        <a class="btn btn-sm" href="/editor?page=${p.id}">Thiết kế</a>
+        <a class="btn btn-ghost btn-sm" href="/preview/${p.id}" target="_blank" rel="noopener">Xem trước</a>
+        ${p.published_at ? `<button class="btn btn-ghost btn-sm" data-unpublish="${p.id}">Gỡ</button>` : `<button class="btn btn-ghost btn-sm" data-publish="${p.id}">Xuất bản</button>`}
+        ${p.slug === 'index' ? '' : `<button class="btn btn-ghost btn-sm" data-delete="${p.id}">Xóa</button>`}
+      </div></td>
+    </tr>`).join('');
+}
+
+async function loadLeads() {
+  const leads = await api(`/sites/${siteId}/leads`);
+  $('#lead-count').textContent = `${leads.length} lượt đăng ký`;
+  $('#leads').innerHTML = leads.length
+    ? leads.map((l) => `
+      <tr><td style="white-space:nowrap">${esc(l.createdAt)}</td><td>${esc(l.page)}</td>
+      <td>${Object.entries(l.data).map(([k, v]) => `<div><span class="muted">${esc(k)}:</span> ${esc(v)}</div>`).join('')}</td>
+      <td><button class="btn btn-ghost btn-sm" data-lead="${l.id}">Xóa</button></td></tr>`).join('')
+    : '<tr><td colspan="4" class="muted">Chưa có dữ liệu. Mọi biểu mẫu trên trang đã xuất bản sẽ tự động gửi về đây.</td></tr>';
+}
+
+$('#logout').onclick = HTC.logout;
+
+document.querySelectorAll('.tabs button').forEach((btn) => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== btn.dataset.tab; });
+  };
+});
+
+$('#pages').onclick = async (e) => {
+  const { publish, unpublish, delete: del } = e.target.dataset;
+  showError();
+  try {
+    if (publish) await api(`/pages/${publish}/publish`, { method: 'POST', body: {} });
+    else if (unpublish) await api(`/pages/${unpublish}/unpublish`, { method: 'POST', body: {} });
+    else if (del && confirm('Xóa trang này?')) await api(`/pages/${del}`, { method: 'DELETE' });
+    else return;
+    await loadPages();
+  } catch (err) { showError(err); }
+};
+
+$('#leads').onclick = async (e) => {
+  const id = e.target.dataset.lead;
+  if (!id || !confirm('Xóa dữ liệu này?')) return;
+  try { await api(`/leads/${id}`, { method: 'DELETE' }); await loadLeads(); } catch (err) { showError(err); }
+};
+
+$('#settings-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  try { await api(`/sites/${siteId}`, { method: 'PATCH', body: formData(e.target) }); await load(); alert('Đã lưu'); } catch (err) { showError(err); }
+};
+
+$('#delete-site').onclick = async () => {
+  if (prompt(`Nhập "${site.subdomain}" để xác nhận xóa`) !== site.subdomain) return;
+  try { await api(`/sites/${siteId}`, { method: 'DELETE' }); location.href = '/app/'; } catch (err) { showError(err); }
+};
+
+const dialog = $('#page-dialog');
+$('#new-page-btn').onclick = async () => {
+  const templates = await api('/templates');
+  $('#templates').innerHTML = templates.map((t, i) => `
+    <label title="${esc(t.description)}"><input type="radio" name="template" value="${t.id}" ${i === 0 ? 'checked' : ''}>${esc(t.name)}</label>`).join('');
+  $('#page-form').reset();
+  $('#page-error').textContent = '';
+  dialog.showModal();
+};
+$('#page-cancel').onclick = () => dialog.close();
+$('#p-title').oninput = (e) => { $('#p-slug').value = slugify(e.target.value); };
+$('#page-form').onsubmit = async (e) => {
+  e.preventDefault();
+  try {
+    const page = await api(`/sites/${siteId}/pages`, { method: 'POST', body: formData(e.target) });
+    location.href = `/editor?page=${page.id}`;
+  } catch (err) { $('#page-error').textContent = err.message; }
+};
+
+load().catch(showError);
+</script>
+</body>
+</html>

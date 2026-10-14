@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bảng điều khiển · HiTechCloud LandingPage</title>
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="container">
+    <a class="brand" href="/app/">HiTech<span>Cloud</span></a>
+    <div class="topbar-right">
+      <select id="ws-select" aria-label="Chọn workspace"></select>
+      <span class="user-name muted" id="user-name"></span>
+      <button class="btn btn-ghost btn-sm" id="logout">Đăng xuất</button>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+  <div class="page-head row">
+    <div>
+      <h1 id="ws-name">…</h1>
+      <span class="badge badge-primary" id="ws-plan"></span>
+    </div>
+    <button class="btn" id="new-site-btn">+ Tạo website</button>
+  </div>
+
+  <div class="usage" id="usage" style="margin-top:16px"></div>
+
+  <div class="tabs" role="tablist">
+    <button class="active" data-tab="sites">Website</button>
+    <button data-tab="members">Thành viên</button>
+    <button data-tab="billing">Gói dịch vụ</button>
+    <button data-tab="settings">Cài đặt</button>
+  </div>
+
+  <div class="alert" id="error"></div>
+
+  <section data-panel="sites"><div class="grid" id="sites"></div></section>
+
+  <section data-panel="members" hidden>
+    <div class="card stack">
+      <form id="member-form" class="row" style="align-items:flex-end">
+        <div style="flex:1 1 240px"><label for="member-email">Thêm thành viên theo email</label><input id="member-email" name="email" type="email" required></div>
+        <div style="flex:0 1 160px"><label for="member-role">Vai trò</label>
+          <select id="member-role" name="role"><option value="editor">Biên tập viên</option><option value="admin">Quản trị viên</option></select></div>
+        <button class="btn" type="submit">Thêm</button>
+      </form>
+      <div class="table-wrap"><table><thead><tr><th>Tên</th><th>Email</th><th>Vai trò</th><th></th></tr></thead><tbody id="members"></tbody></table></div>
+    </div>
+  </section>
+
+  <section data-panel="billing" hidden><div class="grid" id="plans"></div></section>
+
+  <section data-panel="settings" hidden>
+    <div class="card stack">
+      <form id="ws-form">
+        <label for="ws-rename">Tên workspace</label>
+        <div class="row"><input id="ws-rename" name="name" style="flex:1" required><button class="btn" type="submit">Lưu</button></div>
+      </form>
+      <form id="ws-new-form">
+        <label for="ws-new">Tạo workspace mới (cho khách hàng/dự án khác)</label>
+        <div class="row"><input id="ws-new" name="name" style="flex:1" required><button class="btn btn-ghost" type="submit">Tạo</button></div>
+      </form>
+    </div>
+  </section>
+</main>
+
+<dialog id="site-dialog">
+  <form id="site-form" method="dialog">
+    <h2>Tạo website mới</h2>
+    <div class="alert" id="site-error"></div>
+    <label for="site-name">Tên website</label>
+    <input id="site-name" name="name" required>
+    <label for="site-sub">Tên miền phụ</label>
+    <input id="site-sub" name="subdomain" pattern="[a-z0-9]([a-z0-9\-]*[a-z0-9])?" required>
+    <div class="hint">Trang sẽ có địa chỉ <code>/p/<span id="sub-preview">ten-mien</span></code></div>
+    <label>Mẫu khởi đầu</label>
+    <div class="template-list" id="templates"></div>
+    <div class="dialog-actions">
+      <button class="btn btn-ghost" type="button" value="cancel" id="site-cancel">Hủy</button>
+      <button class="btn" type="submit">Tạo website</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/assets/api.js"></script>
+<script>
+const { api, esc, $, formData, slugify, formatVnd, limit } = HTC;
+const ROLE_LABEL = { owner: 'Chủ sở hữu', admin: 'Quản trị viên', editor: 'Biên tập viên' };
+let me, ws;
+
+function showError(err) { $('#error').textContent = err ? err.message : ''; }
+
+async function load() {
+  me = await api('/auth/me');
+  $('#user-name').textContent = me.user.name;
+  const current = HTC.currentWorkspace(me.workspaces);
+  $('#ws-select').innerHTML = me.workspaces
+    .map((w) => `<option value="${w.id}" ${w.id === current.id ? 'selected' : ''}>${esc(w.name)}</option>`)
+    .join('');
+  await loadWorkspace(current.id);
+}
+
+async function loadWorkspace(id) {
+  HTC.setWorkspace(id);
+  ws = await api(`/workspaces/${id}`);
+  const p = ws.planDetails;
+  $('#ws-name').textContent = ws.name;
+  $('#ws-rename').value = ws.name;
+  $('#ws-plan').textContent = `Gói ${p.name}`;
+  $('#usage').innerHTML = [
+    ['Website', ws.usage.sites, p.maxSites],
+    ['Thành viên', ws.usage.members, p.maxMembers],
+    ['Lead tháng này', ws.usage.leadsThisMonth, p.maxLeadsPerMonth],
+  ].map(([label, used, max]) => `<div class="card"><span class="muted">${label}</span><strong>${used} / ${limit(max)}</strong></div>`).join('');
+  await Promise.all([loadSites(), loadMembers(), loadPlans()]);
+}
+
+async function loadSites() {
+  const sites = await api(`/workspaces/${ws.id}/sites`);
+  $('#sites').innerHTML = sites.length
+    ? sites.map((s) => `
+      <div class="card stack">
+        <div><h3 style="margin:0">${esc(s.name)}</h3>
+        <a class="muted" href="${esc(HTC.publicUrl(s))}" target="_blank" rel="noopener">/p/${esc(s.subdomain)}</a>
+        ${s.custom_domain ? `<div class="muted">${esc(s.custom_domain)}</div>` : ''}</div>
+        <div class="muted">${s.page_count} trang</div>
+        <div class="row"><a class="btn btn-sm" href="/app/site?id=${s.id}">Quản lý</a></div>
+      </div>`).join('')
+    : '<div class="card muted">Chưa có website nào. Bấm “Tạo website” để bắt đầu.</div>';
+}
+
+async function loadMembers() {
+  const members = await api(`/workspaces/${ws.id}/members`);
+  const canManage = ws.role === 'owner' || ws.role === 'admin';
+  $('#member-form').hidden = !canManage;
+  $('#members').innerHTML = members.map((m) => `
+    <tr><td>${esc(m.name)}</td><td>${esc(m.email)}</td><td>${ROLE_LABEL[m.role]}</td>
+    <td>${canManage && m.role !== 'owner' ? `<button class="btn btn-ghost btn-sm" data-remove="${m.id}">Xóa</button>` : ''}</td></tr>`).join('');
+}
+
+async function loadPlans() {
+  const plans = await api('/plans');
+  $('#plans').innerHTML = plans.map((p) => `
+    <div class="card stack" ${p.id === ws.plan ? 'style="border:2px solid var(--primary)"' : ''}>
+      <div class="row"><h3 style="margin:0">${esc(p.name)}</h3>${p.id === ws.plan ? '<span class="badge badge-success">Đang dùng</span>' : ''}</div>
+      <strong style="font-size:22px">${formatVnd(p.priceVnd)}</strong>
+      <ul class="muted" style="padding-left:18px;margin:0">
+        <li>${limit(p.maxSites)} website</li>
+        <li>${limit(p.maxPagesPerSite)} trang / website</li>
+        <li>${limit(p.maxMembers)} thành viên</li>
+        <li>${limit(p.maxLeadsPerMonth)} lead / tháng</li>
+        <li>${p.customDomain ? 'Tên miền riêng' : 'Chỉ tên miền phụ'}</li>
+        <li>${p.removeBranding ? 'Không gắn thương hiệu HiTechCloud' : 'Có gắn nhãn HiTechCloud'}</li>
+      </ul>
+      ${p.id === ws.plan ? '' : me.user.isSuperAdmin
+        ? `<button class="btn btn-sm" data-plan="${p.id}">Chuyển sang gói này (admin)</button>`
+        : '<a class="btn btn-ghost btn-sm" href="mailto:sales@hitechcloud.vn">Liên hệ nâng cấp</a>'}
+    </div>`).join('');
+}
+
+// ----- events -----
+$('#logout').onclick = HTC.logout;
+$('#ws-select').onchange = (e) => loadWorkspace(Number(e.target.value)).catch(showError);
+
+document.querySelectorAll('.tabs button').forEach((btn) => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== btn.dataset.tab; });
+  };
+});
+
+$('#member-form').onsubmit = async (e) => {
+  e.preventDefault();
+  showError();
+  try {
+    await api(`/workspaces/${ws.id}/members`, { method: 'POST', body: formData(e.target) });
+    e.target.reset();
+    await loadWorkspace(ws.id);
+  } catch (err) { showError(err); }
+};
+
+$('#members').onclick = async (e) => {
+  const id = e.target.dataset.remove;
+  if (!id || !confirm('Xóa thành viên này khỏi workspace?')) return;
+  try { await api(`/workspaces/${ws.id}/members/${id}`, { method: 'DELETE' }); await loadWorkspace(ws.id); } catch (err) { showError(err); }
+};
+
+$('#plans').onclick = async (e) => {
+  const plan = e.target.dataset.plan;
+  if (!plan) return;
+  try { await api(`/workspaces/${ws.id}/plan`, { method: 'POST', body: { plan } }); await loadWorkspace(ws.id); } catch (err) { showError(err); }
+};
+
+$('#ws-form').onsubmit = async (e) => {
+  e.preventDefault();
+  try { await api(`/workspaces/${ws.id}`, { method: 'PATCH', body: formData(e.target) }); await load(); } catch (err) { showError(err); }
+};
+
+$('#ws-new-form').onsubmit = async (e) => {
+  e.preventDefault();
+  try {
+    const created = await api('/workspaces', { method: 'POST', body: formData(e.target) });
+    HTC.setWorkspace(created.id);
+    e.target.reset();
+    await load();
+  } catch (err) { showError(err); }
+};
+
+// ----- create site dialog -----
+const dialog = $('#site-dialog');
+let subTouched = false;
+$('#new-site-btn').onclick = async () => {
+  const templates = await api('/templates');
+  $('#templates').innerHTML = templates.map((t, i) => `
+    <label title="${esc(t.description)}"><input type="radio" name="template" value="${t.id}" ${t.id === 'saas' || (i === 0 && !templates.some((x) => x.id === 'saas')) ? 'checked' : ''}>${esc(t.name)}</label>`).join('');
+  $('#site-form').reset();
+  $('#site-error').textContent = '';
+  subTouched = false;
+  dialog.showModal();
+};
+$('#site-cancel').onclick = () => dialog.close();
+$('#site-name').oninput = (e) => { if (!subTouched) { $('#site-sub').value = slugify(e.target.value); $('#sub-preview').textContent = $('#site-sub').value || 'ten-mien'; } };
+$('#site-sub').oninput = (e) => { subTouched = true; $('#sub-preview').textContent = e.target.value || 'ten-mien'; };
+$('#site-form').onsubmit = async (e) => {
+  e.preventDefault();
+  try {
+    const site = await api(`/workspaces/${ws.id}/sites`, { method: 'POST', body: formData(e.target) });
+    location.href = `/app/site?id=${site.id}`;
+  } catch (err) { $('#site-error').textContent = err.message; }
+};
+
+load().catch(showError);
+</script>
+</body>
+</html>
