@@ -10,6 +10,14 @@
 # Dashboard, editor and API
 {$APP_DOMAIN} {
 	encode zstd gzip
+	# /metrics is served by the app only on this host and only with METRICS_TOKEN
+	# (customer hosts never get it, so it is not blocked below: a customer page may use
+	# the slug "metrics"). Optional extra layer: allow scraping from known IPs only.
+	# @metrics_denied {
+	# 	path /metrics
+	# 	not remote_ip 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 203.0.113.10
+	# }
+	# respond @metrics_denied 404
 	reverse_proxy app:3000
 }
 

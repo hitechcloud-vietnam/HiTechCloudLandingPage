@@ -1,6 +1,7 @@
 'use strict';
 
 const { PLANS } = require('./plans');
+const { logger } = require('./logger');
 
 const REMINDER_DAYS = [7, 1];
 
@@ -52,7 +53,7 @@ function startJobs({ db, mailer, config }) {
       purgeExpired(db);
       sendExpiryReminders({ db, mailer, config });
     } catch (err) {
-      console.error('[jobs]', err);
+      logger.error('[jobs] background job failed', { component: 'jobs', err });
     }
   };
   run();

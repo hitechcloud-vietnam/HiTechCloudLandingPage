@@ -5,6 +5,7 @@ const dnsCb = require('node:dns');
 const https = require('node:https');
 const net = require('node:net');
 const { parse } = require('./siteSettings');
+const { logger } = require('./logger');
 
 // Blocks webhook delivery to loopback, private, link-local (cloud metadata)
 // and other non-public ranges so a customer webhook cannot probe our network.
@@ -124,7 +125,7 @@ function createNotifier({ db, config, mailer }) {
           () => (results[name] = 'ok'),
           (err) => {
             results[name] = err.message;
-            console.warn(`[notify] ${name} cho site ${site.id} lỗi: ${err.message}`);
+            (config.logger || logger).warn(`[notify] ${name} cho site ${site.id} lỗi: ${err.message}`, { component: 'notify', siteId: site.id });
           }
         )
       )

@@ -25,6 +25,13 @@ const config = {
   // smtp(s)://user:pass@host:port — leave empty to log emails to stdout.
   smtpUrl: process.env.SMTP_URL || '',
   mailFrom: process.env.MAIL_FROM || 'HiTechCloud <no-reply@hitechcloud.vn>',
+  // Observability. Logs are silent under the test runner unless LOG_LEVEL is set.
+  logLevel: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'test' || process.env.NODE_TEST_CONTEXT ? 'silent' : 'info'),
+  logFormat: process.env.LOG_FORMAT || (process.env.NODE_ENV === 'production' ? 'json' : 'pretty'),
+  // Bearer token for GET /metrics on the APP_URL host; unset = endpoint disabled (404).
+  metricsToken: process.env.METRICS_TOKEN || '',
+  // Slack/Discord-compatible incoming webhook for 5xx / crash alerts.
+  errorWebhookUrl: process.env.ERROR_WEBHOOK_URL || '',
   payments: {
     payos: {
       clientId: process.env.PAYOS_CLIENT_ID,
