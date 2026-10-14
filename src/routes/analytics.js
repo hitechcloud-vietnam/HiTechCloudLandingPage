@@ -55,13 +55,13 @@ function createAnalyticsRouter({ db, config, access }) {
     ),
     leadsByDay: db.prepare(
       `SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM leads
-       WHERE site_id = ? AND created_at BETWEEN ? AND ? GROUP BY day`
+       WHERE site_id = ? AND created_at BETWEEN ? AND ? AND status != 'spam' GROUP BY day`
     ),
     viewsTotal: db.prepare(
       `SELECT COALESCE(SUM(v.views), 0) AS n FROM pages p JOIN page_views v ON v.page_id = p.id
        WHERE p.site_id = ? AND v.day BETWEEN ? AND ?`
     ),
-    leadsTotal: db.prepare('SELECT COUNT(*) AS n FROM leads WHERE site_id = ? AND created_at BETWEEN ? AND ?'),
+    leadsTotal: db.prepare("SELECT COUNT(*) AS n FROM leads WHERE site_id = ? AND created_at BETWEEN ? AND ? AND status != 'spam'"),
     pages: db.prepare('SELECT id, title, slug FROM pages WHERE site_id = ? ORDER BY id'),
     viewsByPage: db.prepare(
       `SELECT v.page_id, SUM(v.views) AS n FROM pages p JOIN page_views v ON v.page_id = p.id
@@ -69,16 +69,16 @@ function createAnalyticsRouter({ db, config, access }) {
     ),
     leadsByPage: db.prepare(
       `SELECT page_id, page_slug, COUNT(*) AS n FROM leads
-       WHERE site_id = ? AND created_at BETWEEN ? AND ? GROUP BY page_id, page_slug`
+       WHERE site_id = ? AND created_at BETWEEN ? AND ? AND status != 'spam' GROUP BY page_id, page_slug`
     ),
     leadsBySource: db.prepare(
       `SELECT CASE WHEN json_valid(source_json) THEN json_extract(source_json, '$.utm_source') END AS utm,
               CASE WHEN json_valid(source_json) THEN json_extract(source_json, '$.ref') END AS ref,
               COUNT(*) AS n
-       FROM leads WHERE site_id = ? AND created_at BETWEEN ? AND ? GROUP BY utm, ref`
+       FROM leads WHERE site_id = ? AND created_at BETWEEN ? AND ? AND status != 'spam' GROUP BY utm, ref`
     ),
     leadsByStatus: db.prepare(
-      'SELECT status, COUNT(*) AS n FROM leads WHERE site_id = ? AND created_at BETWEEN ? AND ? GROUP BY status'
+      "SELECT status, COUNT(*) AS n FROM leads WHERE site_id = ? AND created_at BETWEEN ? AND ? AND status != 'spam' GROUP BY status"
     ),
   };
 

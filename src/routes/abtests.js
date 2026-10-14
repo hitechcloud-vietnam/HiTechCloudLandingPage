@@ -37,7 +37,7 @@ function createAbRouter({ db, access }) {
   // leads carry the test id + bucket from the form, so pre-test traffic and
   // direct visits to the variant URL never skew the comparison.
   function stats(test) {
-    const leads = (bucket) => db.prepare('SELECT COUNT(*) AS n FROM leads WHERE ab_test_id = ? AND ab_bucket = ?').get(test.id, bucket).n;
+    const leads = (bucket) => db.prepare("SELECT COUNT(*) AS n FROM leads WHERE ab_test_id = ? AND ab_bucket = ? AND status != 'spam'").get(test.id, bucket).n;
     const a = { pageId: test.page_id, views: test.views_a, leads: leads('a') };
     const b = { pageId: test.variant_page_id, views: test.views_b, leads: leads('b') };
     for (const x of [a, b]) x.rate = x.views ? Math.round((x.leads / x.views) * 10000) / 100 : 0;

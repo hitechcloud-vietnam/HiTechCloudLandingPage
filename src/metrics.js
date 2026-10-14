@@ -139,7 +139,7 @@ function createMetrics({ db, config, cacheMs = 15_000, now = () => Date.now() })
     gauge('hitechcloud_workspaces_paid', 'Workspaces on an active paid plan.', paid.length ? paid : [[{ plan: 'none' }, 0]]);
     gauge('hitechcloud_sites', 'Sites.', [[{}, count('SELECT COUNT(*) AS n FROM sites')]]);
     gauge('hitechcloud_pages_published', 'Published pages.', [[{}, count('SELECT COUNT(*) AS n FROM pages WHERE published_html IS NOT NULL')]]);
-    gauge('hitechcloud_leads_today', 'Leads captured since 00:00 UTC today.', [[{}, count('SELECT COUNT(*) AS n FROM leads WHERE created_at >= ?', today)]]);
+    gauge('hitechcloud_leads_today', 'Leads captured since 00:00 UTC today.', [[{}, count("SELECT COUNT(*) AS n FROM leads WHERE created_at >= ? AND status != 'spam'", today)]]);
     business = { at: now(), lines };
     return lines;
   }

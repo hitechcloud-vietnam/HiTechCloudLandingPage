@@ -129,8 +129,8 @@ test('public API v1: keys, tenant isolation, leads, publish', async (t) => {
   });
 
   await t.test('lead listing, filters, pagination and patch', async () => {
-    for (let i = 1; i <= 5; i++) await submitLead(base, a.site.id, { name: `Khách ${i}`, phone: `090${i}`, _utm_source: 'zalo' });
-    await submitLead(base, b.site.id, { name: 'Khách của B', phone: '0999' });
+    for (let i = 1; i <= 5; i++) await submitLead(base, a.site.id, { name: `Khách ${i}`, phone: `090123456${i}`, _utm_source: 'zalo' });
+    await submitLead(base, b.site.id, { name: 'Khách của B', phone: '0999123456' });
     const api = bearer(base, keyA);
 
     let res = await api('GET', `/sites/${a.site.id}/leads`);
@@ -139,7 +139,7 @@ test('public API v1: keys, tenant isolation, leads, publish', async (t) => {
     assert.equal(res.data.nextCursor, null);
     const newest = res.data.data[0];
     assert.deepEqual(Object.keys(newest).sort(), ['createdAt', 'data', 'id', 'note', 'page', 'source', 'status']);
-    assert.deepEqual(newest.data, { name: 'Khách 5', phone: '0905' });
+    assert.deepEqual(newest.data, { name: 'Khách 5', phone: '0901234565' });
     assert.deepEqual(newest.source, { utm_source: 'zalo' });
     assert.ok(!JSON.stringify(res.data).includes('Khách của B'));
 

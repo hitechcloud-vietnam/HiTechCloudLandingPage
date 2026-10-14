@@ -78,7 +78,7 @@ test('Slack, Discord and Google Sheets lead channels', async (t) => {
     calls.length = 0;
     const res = await fetch(`${base}/_htc/lead?site=${site.id}&page=index`, {
       method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ name: 'An <!channel>', phone: '0909', site: 'spoof', _utm_source: 'facebook', _utm_campaign: 'tet', _ref: 'https://fb.com/' }).toString(),
+      body: new URLSearchParams({ name: 'An <!channel>', phone: '0909123456', site: 'spoof', _utm_source: 'facebook', _utm_campaign: 'tet', _ref: 'https://fb.com/' }).toString(),
     });
     assert.equal(res.status, 303);
     await new Promise((r) => setTimeout(r, 50));
@@ -86,18 +86,18 @@ test('Slack, Discord and Google Sheets lead channels', async (t) => {
     const slack = JSON.parse(calls.find((x) => x.url === SLACK).opts.body);
     assert.deepEqual(Object.keys(slack), ['text']);
     assert.match(slack.text, /\*name:\* An &lt;!channel&gt;/);
-    assert.match(slack.text, /\*phone:\* 0909/);
+    assert.match(slack.text, /\*phone:\* 0909123456/);
     assert.match(slack.text, /Lead mới từ "Shop"/);
     assert.match(slack.text, /<http:\/\/localhost:3999\/app\/site\?id=\d+\|Xem tất cả lead>/);
 
     const discord = JSON.parse(calls.find((x) => x.url === DISCORD).opts.body);
-    assert.match(discord.content, /phone: 0909/);
+    assert.match(discord.content, /phone: 0909123456/);
     assert.deepEqual(discord.allowed_mentions, { parse: [] });
 
     const row = JSON.parse(calls.find((x) => x.url === SHEETS).opts.body);
     assert.match(row.createdAt, /^\d{4}-\d{2}-\d{2}T/);
     assert.deepEqual({ ...row, createdAt: undefined }, {
-      createdAt: undefined, site: 'Shop', page: 'index', name: 'An <!channel>', phone: '0909',
+      createdAt: undefined, site: 'Shop', page: 'index', name: 'An <!channel>', phone: '0909123456',
       utm_source: 'facebook', utm_campaign: 'tet', ref: 'https://fb.com/',
     });
   });

@@ -18,6 +18,8 @@ const FIELDS = {
   slackWebhookUrl: { re: /^https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/_-]+$/, label: 'Slack webhook URL (https://hooks.slack.com/services/…)', secret: 'hasSlackWebhook' },
   discordWebhookUrl: { re: /^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+$/, label: 'Discord webhook URL (https://discord.com/api/webhooks/…)', secret: 'hasDiscordWebhook' },
   sheetsWebhookUrl: { re: /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/, label: 'Google Sheets (Apps Script) URL (https://script.google.com/macros/s/…/exec)', secret: 'hasSheetsWebhook' },
+  turnstileSiteKey: { re: /^[0-9A-Za-z_-]{10,100}$/, label: 'Cloudflare Turnstile site key' },
+  turnstileSecret: { re: /^[0-9A-Za-z_-]{10,100}$/, label: 'Cloudflare Turnstile secret key', secret: 'hasTurnstileSecret' },
 };
 const MAX_FIELD = 500;
 const MAX_CUSTOM_CODE = 20000;
@@ -68,6 +70,18 @@ function applyUpdate(current, input, plan) {
     next.notifyEmails = emails;
   }
   if (input.notifyOwners !== undefined) next.notifyOwners = !!input.notifyOwners;
+
+  // Lead quality (see leadGuard.js).
+  if (input.requireValidPhone !== undefined) {
+    next.requireValidPhone = ![false, 0, '', '0', 'false', 'off', null].includes(input.requireValidPhone);
+  }
+  if (input.dedupeHours !== undefined) {
+    const raw = String(input.dedupeHours ?? '').trim();
+    const hours = Number(raw);
+    if (raw === '') delete next.dedupeHours;
+    else if (!/^\d{1,3}$/.test(raw) || hours > 168) throw new HttpError(400, 'Thời gian chặn lead trùng phải từ 0 đến 168 giờ');
+    else next.dedupeHours = hours;
+  }
 
   for (const key of ['customHead', 'customBody']) {
     if (input[key] === undefined) continue;

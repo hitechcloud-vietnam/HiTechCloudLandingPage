@@ -14,7 +14,8 @@ const KEY_PREFIX = 'htc_live_';
 const KEY_RE = /^htc_live_[A-Za-z0-9_-]{32,64}$/;
 const DISPLAY_PREFIX_LEN = 13; // "htc_live_" + 4 random chars
 const MAX_ACTIVE_KEYS = 20;
-const LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
+// 'spam' is set by lead filtering; spam leads are hidden unless requested explicitly.
+const LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost', 'spam'];
 const PLAN_MESSAGE = 'API chỉ có ở gói Pro trở lên. Vui lòng nâng cấp gói để sử dụng.';
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
@@ -181,6 +182,8 @@ function createPublicApiRouter({ db, config = {} }) {
       if (!LEAD_STATUSES.includes(status)) throw new HttpError(400, 'Trạng thái không hợp lệ');
       where.push('status = ?');
       args.push(status);
+    } else {
+      where.push("status != 'spam'");
     }
     if (cursor !== undefined) {
       if (!/^\d+$/.test(String(cursor))) throw new HttpError(400, 'Tham số cursor không hợp lệ');

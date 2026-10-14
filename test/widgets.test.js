@@ -109,9 +109,9 @@ test('published popup forms post leads to the platform endpoint', async (t) => {
   assert.doesNotMatch(html, /htc-sticky:|htc-proof:/);
 
   const res = await fetch(`${base}/_htc/lead?site=${site.id}&page=index`, {
-    method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'name=An&phone=0909',
+    method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'name=An&phone=0909123456',
   });
   assert.equal(res.status, 303);
   const leads = (await c('GET', `/api/sites/${site.id}/leads`)).data;
-  assert.deepEqual(leads.map((l) => l.data), [{ name: 'An', phone: '0909' }]);
+  assert.deepEqual(leads.map((l) => l.data), [{ name: 'An', phone: '0909123456' }]);
 });

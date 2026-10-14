@@ -71,7 +71,7 @@ test('A/B testing: split traffic, sticky buckets, stats, promote winner', async 
 
   await t.test('stats count only test traffic, per bucket', async () => {
     const post = (action) =>
-      fetch(base + action, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'phone=09' });
+      fetch(base + action, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'phone=0901234567' });
     const a = visitors.find((v) => v.which === 'A');
     const bs = visitors.filter((v) => v.which === 'B').slice(0, 2);
     const res = await post(a.action);
