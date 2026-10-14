@@ -96,6 +96,18 @@ function applyUpdate(current, input, plan) {
   return next;
 }
 
+// True when lead notifications were set up explicitly (owner emails are the default).
+function hasNotifyChannel(s) {
+  return !!(
+    (s.notifyEmails && s.notifyEmails.length) ||
+    s.webhookUrl ||
+    (s.telegramBotToken && s.telegramChatId) ||
+    s.slackWebhookUrl ||
+    s.discordWebhookUrl ||
+    s.sheetsWebhookUrl
+  );
+}
+
 // Tracking snippets injected into <head> of published pages.
 function trackingHead(s) {
   const parts = [];
@@ -123,4 +135,4 @@ function leadEvents(s) {
   return calls.length ? `<script>${calls.join('')}</script>` : '';
 }
 
-module.exports = { FIELDS, parse, publicSettings, applyUpdate, trackingHead, leadEvents };
+module.exports = { FIELDS, parse, publicSettings, applyUpdate, hasNotifyChannel, trackingHead, leadEvents };

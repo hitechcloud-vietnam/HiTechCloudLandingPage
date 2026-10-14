@@ -214,6 +214,14 @@ CREATE TABLE IF NOT EXISTS coupons (
   CHECK ((percent_off IS NULL) <> (amount_off_vnd IS NULL))
 );
 
+-- Dashboard onboarding checklist hidden by a user for one workspace.
+CREATE TABLE IF NOT EXISTS onboarding_dismissals (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  dismissed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, workspace_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_ab_page ON ab_tests(page_id, status);
 CREATE INDEX IF NOT EXISTS idx_assets_workspace ON assets(workspace_id, id);
 CREATE INDEX IF NOT EXISTS idx_versions_page ON page_versions(page_id, id);
@@ -268,6 +276,12 @@ function migrate(db) {
   add('sites', 'suspended_reason', 'TEXT');
   add('users', 'suspended_at', 'TEXT');
   add('users', 'suspended_reason', 'TEXT');
+  // Lifecycle emails (see lifecycle.js). Existing accounts never get a welcome email.
+  if (add('users', 'welcome_sent_at', 'TEXT')) db.exec('UPDATE users SET welcome_sent_at = created_at');
+  add('users', 'nudge_sent_at', 'TEXT');
+  add('users', 'email_digest', 'INTEGER NOT NULL DEFAULT 1');
+  add('users', 'email_tips', 'INTEGER NOT NULL DEFAULT 1');
+  add('workspaces', 'digest_week', 'TEXT');
 }
 
 // Runs fn inside a transaction, rolling back on error.

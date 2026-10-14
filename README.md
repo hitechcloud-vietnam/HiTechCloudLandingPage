@@ -166,6 +166,27 @@ Cổng nào có đủ biến môi trường thì sẽ hiện trong tab **Gói d�
 >
 > Trước khi chạy production, cần **chạy thử trên sandbox Pay2S** để xác nhận tên trường URL thanh toán trả về (`payUrl`), mã thành công và nội dung phản hồi IPN mà Pay2S yêu cầu.
 
+## Hướng dẫn bắt đầu & email vòng đời khách hàng
+
+**Danh sách "Bắt đầu nhanh"** nằm đầu tab Website của dashboard, tính phía máy chủ (`GET /api/workspaces/:id/onboarding`) cho từng người dùng + workspace:
+
+1. Xác minh email · 2. Tạo website đầu tiên · 3. Xuất bản trang · 4. Nhận lead đầu tiên (không tính lead `spam`) · 5. Kết nối thông báo lead: ít nhất một kênh được cấu hình rõ trong Cài đặt website (email nhận thêm, webhook, Telegram, Slack, Discord, Google Sheets; email mặc định gửi cho chủ sở hữu không tính) · 6. Gắn tên miền riêng (tùy chọn, gói Pro trở lên, tính khi tên miền đã xác minh).
+
+Thẻ tự ẩn khi xong 5 bước bắt buộc. Bấm **Ẩn** để ẩn vĩnh viễn (lưu trong bảng `onboarding_dismissals` theo người dùng + workspace, `POST /api/workspaces/:id/onboarding/dismiss`).
+
+**Email vòng đời** do tiến trình nền (`src/jobs.js`, chạy mỗi giờ) gửi; logic nằm trong `src/lifecycle.js`:
+
+| Email | Loại | Khi nào |
+|---|---|---|
+| Chào mừng (3 mẹo bắt đầu + link `/app/`) | Giao dịch | Ngay sau khi đăng ký (lượt chạy hằng giờ gửi bù nếu bị lỡ trong 2 ngày). Tài khoản có trước bản cập nhật không nhận. |
+| Nhắc kích hoạt | Mẹo & nhắc nhở | 3 ngày sau đăng ký, nếu các workspace người dùng sở hữu chưa có trang nào được xuất bản. Chỉ gửi **một lần**, cho tài khoản 3–10 ngày tuổi. |
+| Tóm tắt lead hằng tuần | Tóm tắt lead | Sáng thứ Hai từ 08:00 giờ Việt Nam (UTC+7) cho chủ sở hữu và quản trị viên: lead tuần trước (thứ Hai–Chủ nhật) theo từng website, 3 nguồn lead hàng đầu (`utm_source` hoặc trang giới thiệu), tỷ lệ chuyển đổi so với tuần trước. Không tính lead `spam`; bỏ qua workspace không có lượt xem và lead. Mỗi workspace một lần/tuần (`workspaces.digest_week`). |
+
+- Người dùng bật/tắt hai loại email marketing trong **Cài đặt → Email** (`GET/PUT /api/auth/email-preferences` `{digest, tips}`). Email giao dịch (chào mừng, xác minh, mật khẩu, thanh toán) luôn được gửi.
+- Email marketing có link hủy nhận `GET /email/unsubscribe?token=…` (không cần đăng nhập) và header `List-Unsubscribe` / `List-Unsubscribe-Post` (hủy một chạm, RFC 8058). Token ký HMAC-SHA256 bằng khóa dẫn xuất từ `LEAD_SECRET`; sửa token hoặc tài khoản đã xóa → trang báo lỗi 400. Nên đặt `LEAD_SECRET` cố định ở production để link trong email cũ vẫn dùng được khi đổi khóa SMTP/thanh toán.
+- Không bao giờ gửi cho tài khoản bị tạm ngưng (`users.suspended_at`) hoặc đã xóa.
+- Lượt xem trang được thống kê theo ngày UTC, nên số lượt xem trong email tóm tắt lệch tối đa 7 giờ so với ranh giới tuần giờ Việt Nam (lead được tính chính xác theo giờ Việt Nam).
+
 ## Chất lượng lead & chống spam
 
 Mỗi lần gửi form đi qua các bước sau (`src/leadGuard.js`):
@@ -283,6 +304,9 @@ test/                Test API bằng node:test
 | GET/POST | `/api/auth/verify?token=`, `/api/auth/resend-verification` | Xác minh email (link trong email, gửi lại) |
 | GET/POST | `/api/auth/export`, `/api/auth/delete-account` | Tải dữ liệu cá nhân, xóa tài khoản `{password, confirm: "XOA TAI KHOAN"}` |
 | POST | `/api/workspaces/:id/transfer` | Chuyển quyền sở hữu `{userId}` (chỉ chủ sở hữu) |
+| GET/POST | `/api/workspaces/:id/onboarding`, `/onboarding/dismiss` | Danh sách bắt đầu nhanh `{steps: [{id, done, optional}], completed, total, allDone, dismissed, visible}`, ẩn danh sách |
+| GET/PUT | `/api/auth/email-preferences` | Tùy chọn email marketing `{digest, tips}` |
+| GET/POST | `/email/unsubscribe?token=` | Hủy nhận email marketing (link ký HMAC, không cần đăng nhập) |
 
 ## API công khai
 

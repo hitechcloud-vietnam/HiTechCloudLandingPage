@@ -41,6 +41,22 @@ function hostOf(url) {
   }
 }
 
+// Hosts of the site itself: referrals from them are internal navigation.
+function ownHosts(site, config) {
+  const hosts = new Set([hostOf(config.appUrl)]);
+  if (site.custom_domain) hosts.add(site.custom_domain.toLowerCase().replace(/^www\./, ''));
+  if (config.publishRootDomain) hosts.add(`${site.subdomain}.${config.publishRootDomain}`.toLowerCase());
+  return hosts;
+}
+
+// utm_source, else the external referrer host, else direct.
+function sourceLabel(utm, ref, own) {
+  const s = String(utm ?? '').trim().toLowerCase();
+  if (s) return s.slice(0, 100);
+  const host = ref ? hostOf(String(ref)) : '';
+  return host && !own.has(host) ? host : DIRECT;
+}
+
 function createAnalyticsRouter({ db, config, access }) {
   const r = express.Router();
   r.use(requireUser);
@@ -81,21 +97,6 @@ function createAnalyticsRouter({ db, config, access }) {
       "SELECT status, COUNT(*) AS n FROM leads WHERE site_id = ? AND created_at BETWEEN ? AND ? AND status != 'spam' GROUP BY status"
     ),
   };
-
-  // Hosts of the site itself: referrals from them are internal navigation.
-  function ownHosts(site) {
-    const hosts = new Set([hostOf(config.appUrl)]);
-    if (site.custom_domain) hosts.add(site.custom_domain.toLowerCase().replace(/^www\./, ''));
-    if (config.publishRootDomain) hosts.add(`${site.subdomain}.${config.publishRootDomain}`.toLowerCase());
-    return hosts;
-  }
-
-  function sourceLabel(utm, ref, own) {
-    const s = String(utm ?? '').trim().toLowerCase();
-    if (s) return s.slice(0, 100);
-    const host = ref ? hostOf(String(ref)) : '';
-    return host && !own.has(host) ? host : DIRECT;
-  }
 
   r.get('/sites/:sid/analytics', handler((req) => {
     const { site } = access.site(req.user, req.params.sid);
@@ -142,7 +143,7 @@ function createAnalyticsRouter({ db, config, access }) {
       .sort((a, b) => b.views - a.views || b.leads - a.leads || String(a.slug).localeCompare(String(b.slug)));
 
     // Per source: utm_source, else referrer host, else direct.
-    const own = ownHosts(site);
+    const own = ownHosts(site, config);
     const sources = new Map();
     for (const s of q.leadsBySource.all(site.id, ...cur)) {
       const label = sourceLabel(s.utm, s.ref, own);
@@ -176,4 +177,4 @@ function createAnalyticsRouter({ db, config, access }) {
   return r;
 }
 
-module.exports = { createAnalyticsRouter, ranges, change, rate };
+module.exports = { createAnalyticsRouter, ranges, change, rate, ownHosts, sourceLabel };

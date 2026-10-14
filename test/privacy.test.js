@@ -100,7 +100,8 @@ test('accepting an invitation verifies the email', async (t) => {
     const invitee = client(base);
     assert.equal((await signup(invitee, 'new@example.com', { inviteToken: token })).status, 201);
     assert.equal((await invitee('GET', '/api/auth/me')).data.user.emailVerified, true);
-    assert.equal(outbox.length, before); // no verification email needed
+    // Only the welcome email: no verification email needed.
+    assert.deepEqual(outbox.slice(before).map((m) => m.subject), ['Chào mừng bạn đến với HiTechCloud LandingPage']);
   });
 
   await t.test('logged-in user accepting an invitation', async () => {

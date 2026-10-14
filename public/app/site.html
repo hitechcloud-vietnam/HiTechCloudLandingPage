@@ -456,6 +456,12 @@ document.querySelectorAll('.tabs button').forEach((btn) => {
   };
 });
 
+// Deep link to a tab, e.g. /app/site?id=1&tab=settings (dashboard onboarding checklist).
+{
+  const tab = new URLSearchParams(location.search).get('tab');
+  if (tab && /^[a-z]+$/.test(tab)) document.querySelector(`.tabs [data-tab="${tab}"]`)?.click();
+}
+
 $('#pages').onclick = async (e) => {
   const { publish, unpublish, delete: del, duplicate } = e.target.dataset;
   showError();

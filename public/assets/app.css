@@ -146,3 +146,23 @@ dialog h2 { margin: 0 0 8px; }
 }
 label.consent { display: flex; align-items: flex-start; gap: 10px; margin: 16px 0 0; font-weight: 400; font-size: 14px; line-height: 1.5; cursor: pointer; }
 label.consent input { width: 18px; height: 18px; flex: none; margin: 1px 0 0; padding: 0; accent-color: var(--primary); }
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/* ---------- Onboarding checklist (dashboard) ---------- */
+.onboarding { margin-bottom: 16px; }
+.onboarding h2 { margin: 0; font-size: 18px; }
+.onboarding progress { display: block; width: 100%; height: 8px; margin-top: 10px; appearance: none; border: 0; border-radius: 999px; overflow: hidden; background: var(--border); }
+.onboarding progress::-webkit-progress-bar { background: var(--border); }
+.onboarding progress::-webkit-progress-value { background: var(--success); }
+.onboarding progress::-moz-progress-bar { background: var(--success); }
+.checklist { list-style: none; margin: 0; padding: 0; }
+.checklist li { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 6px 12px; align-items: start; padding: 10px 0; border-top: 1px solid var(--border); }
+.checklist .check { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; border: 2px solid #cbd5e1; font-size: 13px; font-weight: 700; line-height: 1; }
+.checklist li.done .check { background: var(--success); border-color: var(--success); color: #fff; }
+.checklist .step-title { font-weight: 600; overflow-wrap: anywhere; }
+.checklist li.done .step-title { color: var(--muted); text-decoration: line-through; }
+@media (max-width: 480px) {
+  .checklist li { grid-template-columns: 24px minmax(0, 1fr); }
+  .checklist .step-action { grid-column: 2; }
+}
