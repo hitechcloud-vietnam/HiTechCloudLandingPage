@@ -89,6 +89,13 @@ test.describe('Khả năng truy cập & hiển thị di động', () => {
     await expectAccessible(page, errors);
     await page.keyboard.press('Escape');
 
+    // Billing: plans, VAT invoice details (both buyer types), payment history.
+    await page.locator('.tabs [data-tab="billing"]').click();
+    await expect(page.locator('#invoice-profile-form')).toBeVisible();
+    await expectAccessible(page, errors);
+    await page.locator('#bp-type').selectOption('individual');
+    await expectAccessible(page, errors);
+
     // Account settings: password change, API keys, personal-data rights.
     await page.locator('.tabs [data-tab="settings"]').click();
     await expect(page.locator('[data-panel="settings"]')).toBeVisible();

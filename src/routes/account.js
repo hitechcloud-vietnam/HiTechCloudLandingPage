@@ -119,6 +119,13 @@ function exportUserData(db, userId) {
   );
   const leads = db.prepare('SELECT id, page_slug, data_json, source_json, status, note, ip, created_at FROM leads WHERE site_id = ? ORDER BY id');
   const orders = db.prepare('SELECT id, plan, months, amount, provider, order_code, status, created_at, paid_at FROM orders WHERE workspace_id = ? ORDER BY id');
+  const billingProfile = db.prepare(
+    'SELECT buyer_type, company_name, tax_code, address, email, buyer_name, auto_invoice, updated_at FROM billing_profiles WHERE workspace_id = ?'
+  );
+  const invoiceRequests = db.prepare(
+    `SELECT id, order_id, status, buyer_type, company_name, tax_code, address, email, buyer_name, invoice_no, lookup_code, lookup_url,
+       cancel_reason, created_at, processed_at FROM invoice_requests WHERE workspace_id = ? ORDER BY id`
+  );
   return {
     exportedAt: new Date().toISOString(),
     user,
@@ -135,6 +142,8 @@ function exportUserData(db, userId) {
         })),
       })),
       orders: orders.all(ws.id),
+      billingProfile: billingProfile.get(ws.id) || null,
+      invoiceRequests: invoiceRequests.all(ws.id),
     })),
   };
 }

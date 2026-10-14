@@ -223,11 +223,18 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
     const { ws } = access.workspace(req.user, req.params.wid);
     return db
       .prepare(
-        `SELECT id, plan, months, amount, list_amount, discount_vnd, coupon_code, provider, status, checkout_url, created_at, paid_at
-         FROM orders WHERE workspace_id = ? ORDER BY id DESC LIMIT 100`
+        `SELECT o.id, o.plan, o.months, o.amount, o.list_amount, o.discount_vnd, o.coupon_code, o.provider, o.status, o.checkout_url, o.created_at, o.paid_at,
+           ir.status AS invoice_status, ir.invoice_no, ir.lookup_code, ir.lookup_url, ir.cancel_reason
+         FROM orders o LEFT JOIN invoice_requests ir ON ir.order_id = o.id WHERE o.workspace_id = ? ORDER BY o.id DESC LIMIT 100`
       )
       .all(ws.id)
-      .map((o) => ({ ...o, checkout_url: o.status === 'pending' ? o.checkout_url : null }));
+      .map(({ invoice_status, invoice_no, lookup_code, lookup_url, cancel_reason, ...o }) => ({
+        ...o,
+        checkout_url: o.status === 'pending' ? o.checkout_url : null,
+        invoice: invoice_status
+          ? { status: invoice_status, invoiceNo: invoice_no, lookupCode: lookup_code, lookupUrl: lookup_url, cancelReason: cancel_reason }
+          : null,
+      }));
   }));
 
   // ---------- Platform admin ----------
@@ -724,4 +731,4 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   return { router: r, usage };
 }
 
-module.exports = { createApiRouter };
+module.exports = { createApiRouter, csvCell };
