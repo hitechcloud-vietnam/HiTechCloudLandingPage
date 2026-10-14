@@ -25,6 +25,8 @@ const config = {
   // smtp(s)://user:pass@host:port — leave empty to log emails to stdout.
   smtpUrl: process.env.SMTP_URL || '',
   mailFrom: process.env.MAIL_FROM || 'HiTechCloud <no-reply@hitechcloud.vn>',
+  // HMAC key for the anti-bot timestamp in published forms (see leadGuard.js).
+  leadSecret: process.env.LEAD_SECRET || '',
   payments: {
     payos: {
       clientId: process.env.PAYOS_CLIENT_ID,

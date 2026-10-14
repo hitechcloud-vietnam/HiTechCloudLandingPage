@@ -7,6 +7,7 @@ const { leadsThisMonth } = require('../usage');
 const { createRateLimiter } = require('../ratelimit');
 const { parse: parseSettings } = require('../siteSettings');
 const { pickVariant, recordAbView } = require('./abtests');
+const leadGuard = require('../leadGuard');
 
 // Public base URL of a site, used for canonical links and sitemaps.
 // Settings as allowed by the workspace's current plan (paid features stop
@@ -73,6 +74,7 @@ function createSitesRouter({ db, config, access, notifier }) {
           css: page.published_css,
           showBranding: !plan.removeBranding,
           notice: submitted ? 'Cảm ơn bạn! Thông tin đã được gửi thành công.' : '',
+          errorNotice: submitted ? '' : leadGuard.leadErrorMessage(req.query.lead_error),
           settings: entitledSettings(site, plan),
           canonicalUrl: `${siteBaseUrl(site, config)}/${requested.slug === 'index' ? '' : requested.slug}`,
           formSlug: requested.slug,
@@ -103,15 +105,20 @@ function createSitesRouter({ db, config, access, notifier }) {
   });
 
   // Lead capture endpoint used by every published form (all hosts).
-  r.post('/_htc/lead', express.urlencoded({ extended: false, limit: '64kb' }), (req, res) => {
+  r.post('/_htc/lead', express.urlencoded({ extended: false, limit: '64kb' }), (req, res, next) => {
+    handleLead(req, res).catch(next);
+  });
+
+  async function handleLead(req, res) {
     const site = db.prepare('SELECT * FROM sites WHERE id = ?').get(Number(req.query.site));
     if (!site) return sendHtml(res, renderMessage('404', 'Không tìm thấy website'));
     const rawSlug = String(req.query.page || '');
     const pageSlug = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(rawSlug) ? rawSlug : 'index';
     const prefix = siteForHost(req.hostname) ? '' : `/p/${site.subdomain}`;
-    const back = `${prefix}/${pageSlug === 'index' ? '' : pageSlug}?submitted=1`;
+    const pagePath = `${prefix}/${pageSlug === 'index' ? '' : pageSlug}`;
+    const back = `${pagePath}?submitted=1`;
 
-    const { _hp, ...fields } = req.body || {};
+    const { _hp, _ts, _tel, 'cf-turnstile-response': turnstileToken, 'g-recaptcha-response': _recaptcha, ...fields } = req.body || {};
     if (_hp) return res.redirect(303, back); // honeypot filled: silently drop spam
     if (!leadLimiter(`${req.ip}:${site.id}`)) {
       return sendHtml(res, renderMessage('Quá nhiều yêu cầu', 'Vui lòng thử lại sau ít phút.', 429));
@@ -126,10 +133,40 @@ function createSitesRouter({ db, config, access, notifier }) {
     }
     if (!Object.keys(data).length) return res.redirect(303, back);
 
+    // Validation errors go back to the form (keeping UTM attribution).
+    const settings = parseSettings(site);
+    const telNames = String(Array.isArray(_tel) ? _tel[0] : _tel || '').split(',').slice(0, 10);
+    const check = leadGuard.inspectLead(data, { telNames, ts: Array.isArray(_ts) ? _ts[0] : _ts, siteId: site.id, settings });
+    if (check.error) {
+      const qs = new URLSearchParams({ lead_error: check.error });
+      for (const [k, v] of Object.entries(source)) if (k.startsWith('utm_')) qs.set(k, v);
+      return res.redirect(303, `${pagePath}?${qs}`);
+    }
+    const guard = leadGuard.guardSettings(settings);
+    if (guard.turnstile) {
+      const verdict = await leadGuard.verifyTurnstile({
+        secret: settings.turnstileSecret,
+        token: Array.isArray(turnstileToken) ? turnstileToken[0] : turnstileToken,
+        ip: req.ip,
+        fetch: config.fetch || globalThis.fetch,
+      });
+      if (!verdict.ok) {
+        return sendHtml(
+          res,
+          verdict.reason === 'unavailable'
+            ? renderMessage('Chưa gửi được thông tin', 'Hệ thống xác minh chống spam đang bận. Vui lòng quay lại trang và thử lại sau ít phút.', 503)
+            : renderMessage('Chưa xác minh được bạn không phải robot', 'Vui lòng quay lại trang, hoàn tất ô xác minh rồi gửi lại.', 403)
+        );
+      }
+    }
+
+    // Spam is stored for review but never notified nor counted in the quota.
     const plan = workspacePlanById(db, site.workspace_id);
-    if (leadsThisMonth(db, site.workspace_id) >= plan.maxLeadsPerMonth) {
+    if (!check.spam && leadsThisMonth(db, site.workspace_id) >= plan.maxLeadsPerMonth) {
       return sendHtml(res, renderMessage('Tạm ngưng nhận đăng ký', 'Website đã đạt giới hạn tiếp nhận trong tháng.', 503));
     }
+    const duplicateOf = check.spam ? null : leadGuard.findDuplicate(db, site.id, check.contacts, guard.dedupeHours);
+    const flags = duplicateOf ? [...check.flags, 'duplicate'] : check.flags;
     // pid = page actually shown (an A/B variant may be served at another slug).
     const page =
       db.prepare('SELECT id FROM pages WHERE site_id = ? AND id = ?').get(site.id, Number(req.query.pid) || 0) ||
@@ -137,20 +174,25 @@ function createSitesRouter({ db, config, access, notifier }) {
     const abMatch = /^(\d+)([ab])$/.exec(String(req.query.ab || ''));
     const abTest = abMatch && db.prepare("SELECT id FROM ab_tests WHERE id = ? AND site_id = ? AND status = 'running'").get(Number(abMatch[1]), site.id);
     db.prepare(
-      'INSERT INTO leads (site_id, page_slug, page_id, data_json, source_json, ip, ab_test_id, ab_bucket) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      `INSERT INTO leads (site_id, page_slug, page_id, data_json, source_json, ip, ab_test_id, ab_bucket, status, spam_score, flags_json, duplicate_of)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       site.id,
       pageSlug,
       page ? page.id : null,
-      JSON.stringify(data),
+      JSON.stringify(check.data),
       JSON.stringify(source),
       req.ip,
       abTest ? abTest.id : null,
-      abTest ? abMatch[2] : null
+      abTest ? abMatch[2] : null,
+      check.spam ? 'spam' : 'new',
+      check.score,
+      JSON.stringify(flags),
+      duplicateOf
     );
-    if (notifier) notifier.leadCreated({ site, pageSlug, data });
+    if (notifier && !check.spam && !duplicateOf) notifier.leadCreated({ site, pageSlug, data: check.data });
     res.redirect(303, back);
-  });
+  }
 
   function sitemap(site) {
     const base = siteBaseUrl(site, config);

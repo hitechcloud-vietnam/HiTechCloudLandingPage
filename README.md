@@ -12,7 +12,7 @@ Lõi trình thiết kế dùng [GrapesJS](https://github.com/GrapesJS/grapesjs).
 | Mẫu khởi đầu | 9 mẫu theo ngành, mỗi mẫu có bảng màu riêng: Trang trắng, Sản phẩm SaaS, Thu lead nhanh, Sự kiện/Webinar, Spa/Thẩm mỹ, Bất động sản, Khóa học, Nhà hàng/F&B, Bán sản phẩm (COD) |
 | Xuất bản | Tách bản nháp và bản đã xuất bản, gỡ xuất bản, xem trước bản nháp, cài SEO (title, meta description, OG) |
 | Tên miền | `/p/<subdomain>`, `<subdomain>.<PUBLISH_ROOT_DOMAIN>`, tên miền riêng (gói Pro trở lên) |
-| Thu lead & CRM | Mọi `<form>` trên trang đã xuất bản tự gửi về hệ thống. Tự ghi nhận nguồn khách (UTM, referrer). Có trạng thái (Mới → Đã liên hệ → Tiềm năng → Thành công/Thất bại), ghi chú, bộ lọc theo trạng thái / từ khóa / ngày. Chống spam (honeypot + giới hạn tần suất). Xuất CSV theo bộ lọc (chống CSV injection) |
+| Thu lead & CRM | Mọi `<form>` trên trang đã xuất bản tự gửi về hệ thống. Tự ghi nhận nguồn khách (UTM, referrer). Có trạng thái (Mới → Đã liên hệ → Tiềm năng → Thành công/Thất bại), ghi chú, bộ lọc theo trạng thái / từ khóa / ngày. Kiểm tra và chuẩn hóa số điện thoại Việt Nam, kiểm tra email, gộp lead trùng SĐT/email (không báo lại). Chống spam nhiều lớp: honeypot, giới hạn tần suất, dấu thời gian có ký HMAC, chấm điểm spam (link, từ khóa, dữ liệu lặp), Cloudflare Turnstile tùy chọn; lead spam được lưu riêng, không gửi thông báo, không tính hạn mức. Xuất CSV theo bộ lọc (chống CSV injection) |
 | A/B testing | Chia lưu lượng giữa trang gốc và trang biến thể theo tỉ lệ tùy chọn, mỗi khách luôn thấy cùng một phiên bản. Thống kê lượt xem, lead, tỉ lệ chuyển đổi và độ tin cậy (z-test) của từng phiên bản. Chọn phiên bản thắng để thay vào URL gốc (gói Pro trở lên) |
 | Nhiều người thuê | Nhiều workspace cho mỗi người dùng, vai trò Chủ sở hữu / Quản trị viên / Biên tập viên, dữ liệu cách ly theo workspace |
 | Gói dịch vụ | Miễn phí / Pro / Business, giới hạn số website, trang, thành viên, lead/tháng, tên miền riêng, gỡ nhãn "Tạo bởi HiTechCloud" |
@@ -91,6 +91,19 @@ Cổng nào có đủ biến môi trường thì sẽ hiện trong tab **Gói d�
 >
 > Trước khi chạy production, cần **chạy thử trên sandbox Pay2S** để xác nhận tên trường URL thanh toán trả về (`payUrl`), mã thành công và nội dung phản hồi IPN mà Pay2S yêu cầu.
 
+## Chất lượng lead & chống spam
+
+Mỗi lần gửi form đi qua các bước sau (`src/leadGuard.js`):
+
+1. **Honeypot + giới hạn tần suất** (10 lần/phút cho mỗi IP và website).
+2. **Kiểm tra dữ liệu:** trường tên `phone`, `sdt`, `so_dien_thoai`, `dien_thoai`, `tel`, `mobile` hoặc `<input type="tel">` phải là số Việt Nam hợp lệ: di động 03/05/07/08/09 (10 số) hoặc cố định 02x (11 số). Chấp nhận `+84`, `84`, dấu cách, chấm, gạch ngang. Số được lưu thống nhất dạng `0xxxxxxxxx`. Trường `email` phải đúng cú pháp. Sai thì khách được đưa về trang cũ (`?lead_error=phone|email|expired`) kèm thông báo màu đỏ. Tắt kiểm tra SĐT bằng tùy chọn "Chỉ nhận số điện thoại Việt Nam hợp lệ".
+3. **Dấu thời gian `_ts`:** mỗi form có trường ẩn ký HMAC bằng `LEAD_SECRET`. Gửi sớm hơn 2 giây hoặc chữ ký sai bị coi là spam; quá 24 giờ thì khách được yêu cầu gửi lại. Trang cũ không có `_ts` vẫn được nhận (điểm spam +1). Nếu không đặt `LEAD_SECRET`, khóa được dẫn xuất từ khóa bí mật sẵn có (payOS/Pay2S/SMTP) hoặc sinh ngẫu nhiên và lưu cạnh file database.
+4. **Cloudflare Turnstile (tùy chọn):** nhập site key + secret key trong tab Cài đặt. Mọi form được thêm ô xác minh. Máy chủ kiểm tra `cf-turnstile-response` qua `siteverify`; thiếu/sai token hoặc Cloudflare không phản hồi thì **từ chối** (fail closed). Khai báo hostname của website (subdomain/tên miền riêng) trong Cloudflare; đường dẫn `/p/<subdomain>` trên dashboard chạy trong sandbox nên không dùng được Turnstile.
+5. **Điểm spam:** nhiều link, từ khóa cờ bạc/quảng cáo, mọi trường giống nhau, dấu thời gian bất thường. Điểm ≥ 5 → lưu với trạng thái **Spam** (ẩn khỏi danh sách mặc định, xem bằng bộ lọc "Spam"), không gửi thông báo, không tính vào hạn mức lead/tháng. Khách vẫn thấy trang cảm ơn.
+6. **Lead trùng:** cùng SĐT hoặc email trên cùng website trong `dedupeHours` giờ (mặc định 24, 0–168, 0 = tắt) → vẫn lưu, đánh dấu "Trùng #id", không gửi thông báo lại.
+
+Điểm, cờ và lead gốc được lưu ở `leads.spam_score`, `leads.flags_json`, `leads.duplicate_of` và trả về trong API (`spamScore`, `flags`, `duplicateOf`).
+
 ## Kiến trúc
 
 ```
@@ -107,6 +120,7 @@ src/
   payments/pay2s.js  Kết nối Pay2S (ký và xác thực m2signature)
   templates.js       Section và mẫu landing page
   render.js          Render HTML trang đã xuất bản, chuyển hướng form về endpoint thu lead
+  leadGuard.js       Kiểm tra chất lượng lead: SĐT/email, điểm spam, dấu thời gian ký HMAC, lead trùng, Turnstile
   routes/api.js      REST API cho dashboard và editor
   routes/sites.js    Phục vụ trang đã xuất bản (theo host hoặc /p/), xem trước, thu lead, sitemap, TLS ask
   routes/account.js  Quên mật khẩu, lời mời, đổi mật khẩu
@@ -143,7 +157,7 @@ test/                Test API bằng node:test
 | GET/POST | `/api/sites/:id/pages` | Trang |
 | GET/PUT | `/api/pages/:id/project` | Lưu và tải dự án GrapesJS |
 | POST | `/api/pages/:id/publish`, `/unpublish` | Xuất bản |
-| GET / PATCH | `/api/sites/:id/leads[?status=&q=&from=&to=&format=csv]`, `/api/leads/:id` | Lead: lọc, xuất CSV, cập nhật trạng thái và ghi chú |
+| GET / PATCH | `/api/sites/:id/leads[?status=&q=&from=&to=&format=csv]`, `/api/leads/:id` | Lead: lọc (mặc định ẩn `spam`), xuất CSV, cập nhật trạng thái và ghi chú |
 | PATCH | `/api/sites/:id/settings` | Tích hợp marketing và thông báo |
 | POST | `/api/sites/:id/verify-domain` | Xác minh tên miền riêng |
 | GET/POST/DELETE | `/api/workspaces/:id/assets`, `/api/assets/:id` | Thư viện ảnh (body là ảnh thô, `Content-Type: image/*`) |

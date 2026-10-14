@@ -167,7 +167,7 @@ test('SaaS end-to-end flow', async (t) => {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...(ip ? { 'X-Forwarded-For': ip } : {}) },
         body,
       });
-    const ok = await post('name=An&phone=%3D1%2B2');
+    const ok = await post('name=An&message=%3D1%2B2');
     assert.equal(ok.status, 303);
     assert.equal(ok.headers.get('location'), '/p/khuyenmai/?submitted=1');
 
@@ -181,7 +181,7 @@ test('SaaS end-to-end flow', async (t) => {
 
     const leads = await c('GET', `/api/sites/${site.id}/leads`);
     assert.equal(leads.data.length, 2);
-    assert.deepEqual(leads.data[1].data, { name: 'An', phone: '=1+2' });
+    assert.deepEqual(leads.data[1].data, { name: 'An', message: '=1+2' });
 
     const csv = await c('GET', `/api/sites/${site.id}/leads?format=csv`);
     assert.match(csv.headers.get('content-type'), /text\/csv/);

@@ -15,6 +15,8 @@ const FIELDS = {
   webhookUrl: { re: /^https:\/\/[^\s"'<>]{4,500}$/, label: 'Webhook URL (https)' },
   telegramChatId: { re: /^-?\d{3,20}$|^@[A-Za-z0-9_]{5,32}$/, label: 'Telegram chat ID' },
   telegramBotToken: { re: /^\d{5,12}:[A-Za-z0-9_-]{30,50}$/, label: 'Telegram bot token', secret: true },
+  turnstileSiteKey: { re: /^[0-9A-Za-z_-]{10,100}$/, label: 'Cloudflare Turnstile site key' },
+  turnstileSecret: { re: /^[0-9A-Za-z_-]{10,100}$/, label: 'Cloudflare Turnstile secret key', secret: true },
 };
 const MAX_CUSTOM_CODE = 20000;
 const EMAIL_RE = /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/;
@@ -32,6 +34,8 @@ function publicSettings(settings) {
   const out = { ...settings };
   delete out.telegramBotToken;
   out.hasTelegramToken = !!settings.telegramBotToken;
+  delete out.turnstileSecret;
+  out.hasTurnstileSecret = !!settings.turnstileSecret;
   return out;
 }
 
@@ -61,6 +65,18 @@ function applyUpdate(current, input, plan) {
     next.notifyEmails = emails;
   }
   if (input.notifyOwners !== undefined) next.notifyOwners = !!input.notifyOwners;
+
+  // Lead quality (see leadGuard.js).
+  if (input.requireValidPhone !== undefined) {
+    next.requireValidPhone = ![false, 0, '', '0', 'false', 'off', null].includes(input.requireValidPhone);
+  }
+  if (input.dedupeHours !== undefined) {
+    const raw = String(input.dedupeHours ?? '').trim();
+    const hours = Number(raw);
+    if (raw === '') delete next.dedupeHours;
+    else if (!/^\d{1,3}$/.test(raw) || hours > 168) throw new HttpError(400, 'Thời gian chặn lead trùng phải từ 0 đến 168 giờ');
+    else next.dedupeHours = hours;
+  }
 
   for (const key of ['customHead', 'customBody']) {
     if (input[key] === undefined) continue;

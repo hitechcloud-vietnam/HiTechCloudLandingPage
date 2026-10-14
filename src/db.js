@@ -179,6 +179,9 @@ function migrate(db) {
   add('leads', 'page_id', 'INTEGER');
   add('leads', 'ab_test_id', 'INTEGER');
   add('leads', 'ab_bucket', 'TEXT');
+  add('leads', 'spam_score', 'INTEGER NOT NULL DEFAULT 0');
+  add('leads', 'flags_json', "TEXT NOT NULL DEFAULT '[]'");
+  add('leads', 'duplicate_of', 'INTEGER');
   add('ab_tests', 'views_a', 'INTEGER NOT NULL DEFAULT 0');
   add('ab_tests', 'views_b', 'INTEGER NOT NULL DEFAULT 0');
 }

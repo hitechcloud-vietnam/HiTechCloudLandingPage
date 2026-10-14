@@ -460,7 +460,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
       .prepare(
         `SELECT ${PAGE_FIELDS.split(', ').map((f) => `p.${f}`).join(', ')},
            (SELECT COALESCE(SUM(v.views), 0) FROM page_views v WHERE v.page_id = p.id AND v.day >= ?) AS views_30d,
-           (SELECT COUNT(*) FROM leads l WHERE l.site_id = p.site_id AND l.page_slug = p.slug AND l.created_at >= ?) AS leads_30d
+           (SELECT COUNT(*) FROM leads l WHERE l.site_id = p.site_id AND l.page_slug = p.slug AND l.created_at >= ? AND l.status != 'spam') AS leads_30d
          FROM pages p WHERE p.site_id = ? ORDER BY p.slug = 'index' DESC, p.id`
       )
       .all(since, since, site.id);
@@ -567,7 +567,8 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   }));
 
   // ---------- Leads ----------
-  const LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
+  // 'spam' is set by the lead guard (src/leadGuard.js) and hidden unless filtered for.
+  const LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost', 'spam'];
 
   r.get('/sites/:sid/leads', h((req, res) => {
     const { site } = access.site(req.user, req.params.sid);
@@ -576,6 +577,8 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
     if (LEAD_STATUSES.includes(req.query.status)) {
       where.push('status = ?');
       args.push(req.query.status);
+    } else {
+      where.push("status != 'spam'");
     }
     if (/^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '')) {
       where.push('created_at >= ?');
@@ -592,7 +595,7 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
       args.push(like, like);
     }
     const rows = db
-      .prepare(`SELECT id, page_slug, data_json, source_json, status, note, created_at FROM leads WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT 5000`)
+      .prepare(`SELECT id, page_slug, data_json, source_json, status, note, created_at, spam_score, flags_json, duplicate_of FROM leads WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT 5000`)
       .all(...args)
       .map((l) => ({
         id: l.id,
@@ -602,6 +605,9 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
         status: l.status,
         note: l.note,
         createdAt: l.created_at,
+        spamScore: l.spam_score,
+        flags: JSON.parse(l.flags_json || '[]'),
+        duplicateOf: l.duplicate_of,
       }));
 
     if (req.query.format !== 'csv') return rows;
