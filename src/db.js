@@ -67,6 +67,30 @@ CREATE TABLE IF NOT EXISTS leads (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  plan TEXT NOT NULL,
+  months INTEGER NOT NULL,
+  amount INTEGER NOT NULL,
+  provider TEXT NOT NULL,
+  order_code TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'cancelled', 'failed')),
+  checkout_url TEXT,
+  provider_ref TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  paid_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS page_views (
+  page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  views INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (page_id, day)
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_workspace ON orders(workspace_id, id);
 CREATE INDEX IF NOT EXISTS idx_leads_site ON leads(site_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 `;
@@ -76,7 +100,17 @@ function openDb(file) {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+// Additive column migrations for databases created by earlier versions.
+function migrate(db) {
+  const hasColumn = (table, column) =>
+    db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+  if (!hasColumn('workspaces', 'plan_expires_at')) {
+    db.exec('ALTER TABLE workspaces ADD COLUMN plan_expires_at TEXT');
+  }
 }
 
 // Runs fn inside a transaction, rolling back on error.

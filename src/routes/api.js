@@ -3,8 +3,9 @@
 const express = require('express');
 const { hashPassword, verifyPassword, requireUser } = require('../auth');
 const { HttpError } = require('../access');
+const { addMonths } = require('../billing');
 const { transaction } = require('../db');
-const { PLANS, getPlan, publicPlan } = require('../plans');
+const { PLANS, workspacePlan, effectivePlanId, publicPlan } = require('../plans');
 const { renderTemplate, listTemplates, listBlocks, BASE_CSS } = require('../templates');
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -43,7 +44,7 @@ function csvCell(value) {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
-function createApiRouter({ db, sessions, access }) {
+function createApiRouter({ db, sessions, access, billing }) {
   const r = express.Router();
 
   // Wrap handlers so thrown HttpErrors become JSON responses.
@@ -54,6 +55,15 @@ function createApiRouter({ db, sessions, access }) {
     } catch (err) {
       next(err);
     }
+  };
+
+  const ha = (fn) => (req, res, next) => {
+    Promise.resolve()
+      .then(() => fn(req, res))
+      .then((out) => {
+        if (out !== undefined && !res.headersSent) res.json(out);
+      })
+      .catch(next);
   };
 
   function usage(workspaceId) {
@@ -73,6 +83,7 @@ function createApiRouter({ db, sessions, access }) {
   r.get('/plans', h(() => Object.values(PLANS).map(publicPlan)));
   r.get('/templates', h(() => listTemplates()));
   r.get('/blocks', h(() => ({ css: BASE_CSS, blocks: listBlocks() })));
+  r.get('/billing/providers', h(() => billing.providers()));
 
   // ---------- Auth ----------
   r.post('/auth/signup', h((req, res) => {
@@ -128,10 +139,11 @@ function createApiRouter({ db, sessions, access }) {
     user: req.user,
     workspaces: db
       .prepare(
-        `SELECT w.id, w.name, w.plan, m.role FROM memberships m
+        `SELECT w.id, w.name, w.plan, w.plan_expires_at, m.role FROM memberships m
          JOIN workspaces w ON w.id = m.workspace_id WHERE m.user_id = ? ORDER BY w.id`
       )
-      .all(req.user.id),
+      .all(req.user.id)
+      .map((w) => ({ ...w, plan: effectivePlanId(w) })),
   })));
 
   // ---------- Workspaces ----------
@@ -152,7 +164,7 @@ function createApiRouter({ db, sessions, access }) {
 
   r.get('/workspaces/:wid', h((req) => {
     const { ws, role } = access.workspace(req.user, req.params.wid);
-    return { ...ws, role, planDetails: publicPlan(getPlan(ws.plan)), usage: usage(ws.id) };
+    return { ...ws, role, effectivePlan: effectivePlanId(ws), planDetails: publicPlan(workspacePlan(ws)), usage: usage(ws.id) };
   }));
 
   r.patch('/workspaces/:wid', h((req) => {
@@ -168,16 +180,75 @@ function createApiRouter({ db, sessions, access }) {
     return { ok: true };
   }));
 
-  // Billing placeholder: until a payment gateway (VNPay/MoMo/Stripe) is wired
-  // in, only platform super admins can change a workspace's plan.
-  r.post('/workspaces/:wid/plan', h((req) => {
-    if (!req.user.isSuperAdmin) {
-      throw new HttpError(403, 'Vui lòng liên hệ HiTechCloud để nâng cấp gói');
-    }
+  // ---------- Billing ----------
+  r.post('/workspaces/:wid/checkout', ha(async (req) => {
+    const { ws } = access.workspace(req.user, req.params.wid, 'admin');
+    return billing.checkout({ ws, user: req.user, plan: req.body.plan, months: req.body.months, provider: req.body.provider });
+  }));
+
+  r.get('/workspaces/:wid/orders', h((req) => {
+    const { ws } = access.workspace(req.user, req.params.wid);
+    return db
+      .prepare('SELECT id, plan, months, amount, provider, status, checkout_url, created_at, paid_at FROM orders WHERE workspace_id = ? ORDER BY id DESC LIMIT 100')
+      .all(ws.id)
+      .map((o) => ({ ...o, checkout_url: o.status === 'pending' ? o.checkout_url : null }));
+  }));
+
+  // ---------- Platform admin ----------
+  const requireSuperAdmin = (req, _res, next) => next(req.user.isSuperAdmin ? undefined : new HttpError(403, 'Chỉ dành cho quản trị nền tảng'));
+
+  r.get('/admin/stats', requireSuperAdmin, h(() => {
+    const one = (sql, ...args) => db.prepare(sql).get(...args).n;
+    const paidWorkspaces = db
+      .prepare("SELECT plan, plan_expires_at FROM workspaces WHERE plan != 'free'")
+      .all()
+      .filter((w) => effectivePlanId(w) !== 'free');
+    return {
+      users: one('SELECT COUNT(*) AS n FROM users'),
+      workspaces: one('SELECT COUNT(*) AS n FROM workspaces'),
+      paidWorkspaces: paidWorkspaces.length,
+      mrrVnd: paidWorkspaces.reduce((sum, w) => sum + PLANS[w.plan].priceVnd, 0),
+      sites: one('SELECT COUNT(*) AS n FROM sites'),
+      publishedPages: one('SELECT COUNT(*) AS n FROM pages WHERE published_at IS NOT NULL'),
+      leadsThisMonth: one('SELECT COUNT(*) AS n FROM leads WHERE created_at >= ?', monthStart()),
+      revenueThisMonthVnd: one("SELECT COALESCE(SUM(amount), 0) AS n FROM orders WHERE status = 'paid' AND paid_at >= ?", monthStart()),
+      revenueTotalVnd: one("SELECT COALESCE(SUM(amount), 0) AS n FROM orders WHERE status = 'paid'"),
+    };
+  }));
+
+  r.get('/admin/workspaces', requireSuperAdmin, h(() =>
+    db
+      .prepare(
+        `SELECT w.id, w.name, w.plan, w.plan_expires_at, w.created_at,
+           (SELECT u.email FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = w.id AND m.role = 'owner' LIMIT 1) AS owner_email,
+           (SELECT COUNT(*) FROM sites s WHERE s.workspace_id = w.id) AS sites
+         FROM workspaces w ORDER BY w.id DESC LIMIT 500`
+      )
+      .all()
+      .map((w) => ({ ...w, effectivePlan: effectivePlanId(w) }))
+  ));
+
+  r.get('/admin/orders', requireSuperAdmin, h(() =>
+    db
+      .prepare(
+        `SELECT o.id, o.workspace_id, w.name AS workspace_name, o.plan, o.months, o.amount, o.provider, o.status, o.order_code, o.created_at, o.paid_at
+         FROM orders o LEFT JOIN workspaces w ON w.id = o.workspace_id ORDER BY o.id DESC LIMIT 200`
+      )
+      .all()
+  ));
+
+  // Manual plan grant (e.g. bank transfer outside the gateways, enterprise deals).
+  r.post('/workspaces/:wid/plan', requireSuperAdmin, h((req) => {
     const ws = db.prepare('SELECT id FROM workspaces WHERE id = ?').get(req.params.wid);
     if (!ws) throw new HttpError(404, 'Không tìm thấy workspace');
     if (!PLANS[req.body.plan]) throw new HttpError(400, 'Gói không hợp lệ');
-    db.prepare('UPDATE workspaces SET plan = ? WHERE id = ?').run(req.body.plan, ws.id);
+    let expires = null;
+    if (req.body.plan !== 'free' && req.body.months !== undefined && req.body.months !== null && req.body.months !== '') {
+      const months = Number(req.body.months);
+      if (!Number.isInteger(months) || months < 1 || months > 120) throw new HttpError(400, 'Số tháng không hợp lệ');
+      expires = addMonths(new Date(), months).toISOString();
+    }
+    db.prepare('UPDATE workspaces SET plan = ?, plan_expires_at = ? WHERE id = ?').run(req.body.plan, expires, ws.id);
     return { ok: true };
   }));
 
@@ -197,7 +268,7 @@ function createApiRouter({ db, sessions, access }) {
     const email = str(req.body.email, { required: true, field: 'Email' }).toLowerCase();
     const role = req.body.role === 'admin' ? 'admin' : 'editor';
     if (role === 'admin' && myRole !== 'owner') throw new HttpError(403, 'Chỉ chủ sở hữu mới thêm được quản trị viên');
-    const plan = getPlan(ws.plan);
+    const plan = workspacePlan(ws);
     if (usage(ws.id).members >= plan.maxMembers) {
       throw new HttpError(402, `Gói ${plan.name} cho phép tối đa ${plan.maxMembers} thành viên`);
     }
@@ -241,7 +312,7 @@ function createApiRouter({ db, sessions, access }) {
     const name = str(req.body.name, { required: true, field: 'Tên website', max: 100 });
     const subdomain = slug(req.body.subdomain, 'Tên miền phụ');
     if (RESERVED_SUBDOMAINS.has(subdomain)) throw new HttpError(400, 'Tên miền phụ này đã được hệ thống dành riêng');
-    const plan = getPlan(ws.plan);
+    const plan = workspacePlan(ws);
     if (usage(ws.id).sites >= plan.maxSites) {
       throw new HttpError(402, `Gói ${plan.name} cho phép tối đa ${plan.maxSites} website. Vui lòng nâng cấp.`);
     }
@@ -270,13 +341,13 @@ function createApiRouter({ db, sessions, access }) {
 
   r.patch('/sites/:sid', h((req) => {
     const { site } = access.site(req.user, req.params.sid, 'admin');
-    const ws = db.prepare('SELECT plan FROM workspaces WHERE id = ?').get(site.workspace_id);
+    const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(site.workspace_id);
     const name = req.body.name !== undefined ? str(req.body.name, { required: true, field: 'Tên website', max: 100 }) : site.name;
     let customDomain = site.custom_domain;
     if (req.body.customDomain !== undefined) {
       const d = str(req.body.customDomain, { max: 253, field: 'Tên miền' }).toLowerCase();
       if (d) {
-        if (!getPlan(ws.plan).customDomain) throw new HttpError(402, 'Tên miền riêng chỉ có ở gói Pro trở lên');
+        if (!workspacePlan(ws).customDomain) throw new HttpError(402, 'Tên miền riêng chỉ có ở gói Pro trở lên');
         if (!DOMAIN_RE.test(d)) throw new HttpError(400, 'Tên miền không hợp lệ');
       }
       customDomain = d || null;
@@ -301,13 +372,21 @@ function createApiRouter({ db, sessions, access }) {
 
   r.get('/sites/:sid/pages', h((req) => {
     const { site } = access.site(req.user, req.params.sid);
-    return db.prepare(`SELECT ${PAGE_FIELDS} FROM pages WHERE site_id = ? ORDER BY slug = 'index' DESC, id`).all(site.id);
+    const since = new Date(Date.now() - 29 * 86400_000).toISOString().slice(0, 10);
+    return db
+      .prepare(
+        `SELECT ${PAGE_FIELDS.split(', ').map((f) => `p.${f}`).join(', ')},
+           (SELECT COALESCE(SUM(v.views), 0) FROM page_views v WHERE v.page_id = p.id AND v.day >= ?) AS views_30d,
+           (SELECT COUNT(*) FROM leads l WHERE l.site_id = p.site_id AND l.page_slug = p.slug AND l.created_at >= ?) AS leads_30d
+         FROM pages p WHERE p.site_id = ? ORDER BY p.slug = 'index' DESC, p.id`
+      )
+      .all(since, since, site.id);
   }));
 
   r.post('/sites/:sid/pages', h((req, res) => {
     const { site } = access.site(req.user, req.params.sid);
-    const ws = db.prepare('SELECT plan FROM workspaces WHERE id = ?').get(site.workspace_id);
-    const plan = getPlan(ws.plan);
+    const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(site.workspace_id);
+    const plan = workspacePlan(ws);
     const count = db.prepare('SELECT COUNT(*) AS n FROM pages WHERE site_id = ?').get(site.id).n;
     if (count >= plan.maxPagesPerSite) {
       throw new HttpError(402, `Gói ${plan.name} cho phép tối đa ${plan.maxPagesPerSite} trang mỗi website`);

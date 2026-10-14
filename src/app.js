@@ -6,6 +6,7 @@ const { createSessionStore } = require('./auth');
 const { createAccess } = require('./access');
 const { createApiRouter } = require('./routes/api');
 const { createSitesRouter } = require('./routes/sites');
+const { createBilling } = require('./billing');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -18,7 +19,12 @@ function createApp({ db, config }) {
   const access = createAccess(db);
   const appOrigin = new URL(config.appUrl).origin;
 
+  const billing = createBilling({ db, config });
+
   app.use(sessions.load);
+
+  // Payment gateway webhooks and return URLs (no session / CSRF checks; verified by signature).
+  app.use(billing.router);
 
   // Published customer sites (custom domains, subdomains, /p/, /preview, lead capture).
   app.use(createSitesRouter({ db, config, access }));
@@ -35,7 +41,7 @@ function createApp({ db, config }) {
     next();
   });
   app.use('/api', express.json({ limit: '5mb' }));
-  app.use('/api', createApiRouter({ db, sessions, access }).router);
+  app.use('/api', createApiRouter({ db, sessions, access, billing }).router);
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Không tìm thấy' }));
 
   // Editor vendor assets (GrapesJS + plugins BSD-3-Clause, Font Awesome OFL/MIT).

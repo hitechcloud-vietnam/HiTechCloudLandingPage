@@ -19,6 +19,20 @@ const config = {
   superAdmins: list(process.env.SUPERADMIN_EMAILS),
   sessionDays: Number(process.env.SESSION_DAYS || 30),
   secureCookies: process.env.NODE_ENV === 'production',
+  payments: {
+    payos: {
+      clientId: process.env.PAYOS_CLIENT_ID,
+      apiKey: process.env.PAYOS_API_KEY,
+      checksumKey: process.env.PAYOS_CHECKSUM_KEY,
+    },
+    pay2s: {
+      partnerCode: process.env.PAY2S_PARTNER_CODE,
+      accessKey: process.env.PAY2S_ACCESS_KEY,
+      secretKey: process.env.PAY2S_SECRET_KEY,
+      partnerName: process.env.PAY2S_PARTNER_NAME || 'HiTechCloud',
+      environment: process.env.PAY2S_ENV === 'production' ? 'production' : 'sandbox',
+    },
+  },
 };
 
 module.exports = config;
