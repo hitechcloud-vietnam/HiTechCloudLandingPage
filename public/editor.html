@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trình thiết kế · HiTechCloud LandingPage</title>
+<link rel="stylesheet" href="/vendor/grapes.min.css">
+<link rel="stylesheet" href="/assets/app.css">
+<style>
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  .editor-bar { height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 12px; background: #0f172a; color: #e2e8f0; }
+  .editor-bar .left, .editor-bar .right { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .editor-bar a.back { color: #cbd5e1; text-decoration: none; white-space: nowrap; }
+  .editor-bar .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .editor-bar .status { color: #94a3b8; font-size: 13px; white-space: nowrap; }
+  .editor-bar .btn-ghost { color: #e2e8f0; border-color: #334155; }
+  .editor-bar .btn-ghost:hover { background: #1e293b; }
+  #gjs { height: calc(100% - 52px); }
+  .gjs-one-bg { background-color: #1e293b; }
+  .gjs-four-color, .gjs-four-color-h:hover { color: #60a5fa; }
+  @media (max-width: 640px) { .editor-bar .status, .editor-bar .hide-sm { display: none; } }
+</style>
+</head>
+<body>
+<div class="editor-bar">
+  <div class="left">
+    <a class="back" id="back" href="/app/">←</a>
+    <span class="title" id="title">Đang tải…</span>
+    <span class="status" id="status"></span>
+  </div>
+  <div class="right">
+    <button class="btn btn-ghost btn-sm hide-sm" id="seo-btn">SEO</button>
+    <a class="btn btn-ghost btn-sm" id="preview" target="_blank" rel="noopener">Xem trước</a>
+    <button class="btn btn-sm" id="publish">Xuất bản</button>
+  </div>
+</div>
+<div id="gjs"></div>
+
+<dialog id="seo-dialog">
+  <form id="seo-form" method="dialog">
+    <h2>Cài đặt SEO</h2>
+    <div class="alert" id="seo-error"></div>
+    <label for="seo-title">Tiêu đề trang (title)</label>
+    <input id="seo-title" name="title" maxlength="200" required>
+    <label for="seo-desc">Mô tả (meta description)</label>
+    <textarea id="seo-desc" name="metaDescription" rows="3" maxlength="300"></textarea>
+    <div class="dialog-actions">
+      <button class="btn btn-ghost" type="button" id="seo-cancel">Hủy</button>
+      <button class="btn" type="submit">Lưu</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/vendor/grapes.min.js"></script>
+<script src="/vendor/blocks-basic.js"></script>
+<script src="/vendor/plugin-forms.js"></script>
+<script src="/assets/api.js"></script>
+<script>
+(async () => {
+  const { api, $ } = HTC;
+  const pageId = Number(new URLSearchParams(location.search).get('page'));
+  const setStatus = (text) => { $('#status').textContent = text; };
+  const plugin = (name) => { const m = window[name]; return m && m.default ? m.default : m; };
+
+  let page, blocks;
+  try {
+    [page, blocks] = await Promise.all([api(`/pages/${pageId}`), api('/blocks')]);
+  } catch (err) {
+    $('#title').textContent = err.message;
+    return;
+  }
+
+  document.title = `${page.title} · Trình thiết kế`;
+  $('#title').textContent = `${page.site.name} / ${page.title}`;
+  $('#back').href = `/app/site?id=${page.site.id}`;
+  $('#preview').href = `/preview/${page.id}`;
+
+  const editor = grapesjs.init({
+    container: '#gjs',
+    height: '100%',
+    fromElement: false,
+    showOffsets: true,
+    cssIcons: '/vendor/font-awesome/css/font-awesome.min.css',
+    canvas: { styles: [] },
+    deviceManager: {
+      devices: [
+        { id: 'desktop', name: 'Máy tính', width: '' },
+        { id: 'tablet', name: 'Máy tính bảng', width: '768px', widthMedia: '992px' },
+        { id: 'mobile', name: 'Điện thoại', width: '375px', widthMedia: '480px' },
+      ],
+    },
+    plugins: [plugin('gjs-blocks-basic'), plugin('grapesjs-plugin-forms')].filter(Boolean),
+    pluginsOpts: {},
+    storageManager: {
+      type: 'remote',
+      autosave: true,
+      stepsBeforeSave: 3,
+      options: {
+        remote: {
+          urlLoad: `/api/pages/${pageId}/project`,
+          urlStore: `/api/pages/${pageId}/project`,
+          credentials: 'same-origin',
+          fetchOptions: (opts) => (opts.method === 'POST' ? { method: 'PUT' } : {}),
+          onStore: (project, ed) => ({ project, html: ed.getHtml(), css: ed.getCss() }),
+          // A page created from a template has HTML/CSS but no GrapesJS project yet.
+          onLoad: (res) => res.project || { pages: [{ component: res.html || '' }], styles: res.css || '' },
+        },
+      },
+    },
+  });
+
+  // Landing page section blocks served by the platform.
+  for (const b of blocks.blocks) {
+    editor.BlockManager.add(`htc-${b.id}`, {
+      label: b.label,
+      category: 'HiTechCloud – Section',
+      content: b.html,
+      media: '<svg viewBox="0 0 24 24" width="40" height="40"><rect x="2" y="5" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 9h14M5 13h9" stroke="currentColor" stroke-width="1.5"/></svg>',
+    });
+  }
+
+  // Make sure the shared section styles exist when sections are dropped onto a blank page.
+  editor.on('block:drag:stop', (_component, block) => {
+    if (block && String(block.getId()).startsWith('htc-') && !editor.getCss().includes('.htc-container')) {
+      editor.addStyle(blocks.css);
+    }
+  });
+
+  editor.on('storage:start:store', () => setStatus('Đang lưu…'));
+  editor.on('storage:end:store', () => setStatus('Đã lưu'));
+  editor.on('storage:error', (err) => setStatus(`Lỗi lưu: ${err && err.message ? err.message : err}`));
+  editor.on('update', () => setStatus('Có thay đổi chưa lưu'));
+
+  window.addEventListener('beforeunload', (e) => {
+    if (editor.getDirtyCount() > 0) { e.preventDefault(); e.returnValue = ''; }
+  });
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); editor.store(); }
+  });
+
+  $('#preview').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const win = window.open('about:blank', '_blank');
+    await editor.store();
+    if (win) win.location = `/preview/${page.id}`;
+  });
+
+  $('#publish').addEventListener('click', async () => {
+    const btn = $('#publish');
+    btn.disabled = true;
+    try {
+      await editor.store();
+      await api(`/pages/${page.id}/publish`, { method: 'POST', body: {} });
+      setStatus('Đã xuất bản');
+      const url = HTC.publicUrl(page.site, page.slug);
+      if (confirm(`Đã xuất bản thành công!\n${url}\n\nMở trang?`)) window.open(url, '_blank', 'noopener');
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  const seo = $('#seo-dialog');
+  $('#seo-btn').onclick = () => {
+    $('#seo-title').value = page.title;
+    $('#seo-desc').value = page.meta_description || '';
+    $('#seo-error').textContent = '';
+    seo.showModal();
+  };
+  $('#seo-cancel').onclick = () => seo.close();
+  $('#seo-form').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const body = HTC.formData(e.target);
+      await api(`/pages/${page.id}`, { method: 'PATCH', body });
+      page.title = body.title;
+      page.meta_description = body.metaDescription;
+      $('#title').textContent = `${page.site.name} / ${page.title}`;
+      seo.close();
+    } catch (err) { $('#seo-error').textContent = err.message; }
+  };
+})();
+</script>
+</body>
+</html>

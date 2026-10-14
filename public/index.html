@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HiTechCloud LandingPage – Tạo landing page kéo thả trong vài phút</title>
+<meta name="description" content="Nền tảng SaaS tạo landing page kéo thả, thu lead, gắn tên miền riêng dành cho doanh nghiệp Việt Nam.">
+<link rel="stylesheet" href="/assets/app.css">
+<style>
+  .hero { padding: 88px 0 72px; text-align: center; background: linear-gradient(135deg, #eff6ff, #f5f3ff); }
+  .hero h1 { font-size: clamp(32px, 6vw, 52px); margin: 0 0 16px; }
+  .hero p { font-size: 19px; color: var(--muted); max-width: 680px; margin: 0 auto 28px; }
+  .hero .actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  section.block { padding: 64px 0; }
+  section.block h2 { text-align: center; font-size: 30px; margin: 0 0 32px; }
+  .feature .icon { font-size: 28px; }
+  footer { padding: 28px 0; color: var(--muted); text-align: center; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="container">
+    <a class="brand" href="/">HiTech<span>Cloud</span></a>
+    <div class="topbar-right">
+      <a class="btn btn-ghost btn-sm" href="/app/login">Đăng nhập</a>
+      <a class="btn btn-sm" href="/app/signup"><span class="hide-sm">Dùng thử miễn phí</span><span class="show-sm">Đăng ký</span></a>
+    </div>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="container">
+    <h1>Tạo landing page chuyên nghiệp<br>không cần lập trình</h1>
+    <p>Kéo thả trực quan, mẫu có sẵn, thu lead tự động và xuất bản lên tên miền riêng chỉ với một cú nhấp.</p>
+    <div class="actions">
+      <a class="btn" href="/app/signup">Bắt đầu miễn phí</a>
+      <a class="btn btn-ghost" href="#pricing">Xem bảng giá</a>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="container">
+    <h2>Mọi thứ để chạy chiến dịch marketing</h2>
+    <div class="grid">
+      <div class="card feature"><div class="icon">🧱</div><h3>Trình thiết kế kéo thả</h3><p class="muted">Dựa trên GrapesJS: chỉnh sửa trực quan, responsive cho máy tính, tablet và điện thoại.</p></div>
+      <div class="card feature"><div class="icon">📋</div><h3>Thu lead tự động</h3><p class="muted">Mọi biểu mẫu trên trang tự gửi dữ liệu về dashboard, xuất CSV một chạm.</p></div>
+      <div class="card feature"><div class="icon">🌐</div><h3>Tên miền riêng</h3><p class="muted">Xuất bản lên tên miền phụ miễn phí hoặc gắn tên miền của doanh nghiệp.</p></div>
+      <div class="card feature"><div class="icon">👥</div><h3>Làm việc nhóm</h3><p class="muted">Nhiều workspace, phân quyền chủ sở hữu, quản trị viên, biên tập viên.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="pricing" style="background:#fff">
+  <div class="container">
+    <h2>Bảng giá</h2>
+    <div class="grid" id="plans"></div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">© 2026 HiTechCloud-VN · Pho Tue SoftWare Solutions JSC</div>
+</footer>
+
+<script src="/assets/api.js"></script>
+<script>
+  fetch('/api/plans').then((r) => r.json()).then((plans) => {
+    const { esc, formatVnd, limit } = HTC;
+    document.getElementById('plans').innerHTML = plans.map((p) => `
+      <div class="card stack">
+        <h3 style="margin:0">${esc(p.name)}</h3>
+        <strong style="font-size:24px">${formatVnd(p.priceVnd)}</strong>
+        <ul class="muted" style="padding-left:18px;margin:0">
+          <li>${limit(p.maxSites)} website</li>
+          <li>${limit(p.maxPagesPerSite)} trang / website</li>
+          <li>${limit(p.maxLeadsPerMonth)} lead / tháng</li>
+          <li>${p.customDomain ? 'Tên miền riêng' : 'Tên miền phụ miễn phí'}</li>
+        </ul>
+        <a class="btn ${p.id === 'pro' ? '' : 'btn-ghost'}" href="/app/signup">Bắt đầu</a>
+      </div>`).join('');
+  });
+</script>
+</body>
+</html>
