@@ -61,8 +61,13 @@ function createContentRouter({ db, config, access }) {
     express.raw({ type: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], limit: MAX_UPLOAD }),
     h((req, res) => {
       const { ws } = access.workspace(req.user, req.params.wid);
-      const buf = req.body;
-      if (!Buffer.isBuffer(buf) || !buf.length) throw new HttpError(415, 'Chỉ hỗ trợ ảnh PNG, JPEG, GIF, WEBP (tối đa 5MB)');
+      // express.raw yields a Buffer only for the accepted image types; anything
+      // else (missing body, other content types, arrays) is rejected here.
+      if (!Buffer.isBuffer(req.body) || Array.isArray(req.body) || typeof req.body === 'string') {
+        throw new HttpError(415, 'Chỉ hỗ trợ ảnh PNG, JPEG, GIF, WEBP (tối đa 5MB)');
+      }
+      const buf = Buffer.from(req.body);
+      if (!buf.length) throw new HttpError(415, 'Chỉ hỗ trợ ảnh PNG, JPEG, GIF, WEBP (tối đa 5MB)');
       const kind = sniff(buf);
       if (!kind) throw new HttpError(415, 'Tệp không phải ảnh hợp lệ');
       const plan = workspacePlan(ws);
