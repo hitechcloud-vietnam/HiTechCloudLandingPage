@@ -8,6 +8,7 @@ const { createRateLimiter } = require('../ratelimit');
 const { acceptInvitation, createInvitation } = require('./account');
 const siteSettings = require('../siteSettings');
 const { snapshotVersion } = require('./content');
+const { createDomainVerifier, newDomainToken } = require('../domains');
 const { transaction } = require('../db');
 const { PLANS, workspacePlan, effectivePlanId, publicPlan } = require('../plans');
 const { renderTemplate, listTemplates, listBlocks, BASE_CSS } = require('../templates');
@@ -50,6 +51,7 @@ function csvCell(value) {
 
 function createApiRouter({ db, sessions, access, billing, mailer, config, notifier }) {
   const r = express.Router();
+  const domains = createDomainVerifier(config);
   const loginLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 10 });
   const signupLimiter = createRateLimiter({ windowMs: 3600_000, max: 10 });
 
@@ -388,10 +390,13 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
   }));
 
   function siteView(site, role) {
-    const { settings_json, ...rest } = site;
+    const { settings_json, domain_token, ...rest } = site;
     const settings = siteSettings.publicSettings(siteSettings.parse(site));
     if (role === 'editor') delete settings.webhookSecret;
-    return { ...rest, role, settings };
+    const domain = site.custom_domain
+      ? { name: site.custom_domain, verified: !!site.domain_verified_at, ...domains.instructions(site) }
+      : null;
+    return { ...rest, role, settings, domain };
   }
 
   r.get('/sites/:sid', h((req) => {
@@ -404,6 +409,17 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
     const ws = db.prepare('SELECT plan, plan_expires_at FROM workspaces WHERE id = ?').get(site.workspace_id);
     const next = siteSettings.applyUpdate(siteSettings.parse(site), req.body || {}, workspacePlan(ws));
     db.prepare('UPDATE sites SET settings_json = ? WHERE id = ?').run(JSON.stringify(next), site.id);
+    return siteView(db.prepare('SELECT * FROM sites WHERE id = ?').get(site.id), role);
+  }));
+
+  r.post('/sites/:sid/verify-domain', ha(async (req) => {
+    const { site, role } = access.site(req.user, req.params.sid, 'admin');
+    if (!site.custom_domain) throw new HttpError(400, 'Website chưa gắn tên miền riêng');
+    const result = await domains.verify(site);
+    if (!result.ok) {
+      throw new HttpError(400, 'Chưa tìm thấy bản ghi DNS xác minh. DNS có thể mất vài phút đến vài giờ để cập nhật.');
+    }
+    db.prepare("UPDATE sites SET domain_verified_at = datetime('now') WHERE id = ?").run(site.id);
     return siteView(db.prepare('SELECT * FROM sites WHERE id = ?').get(site.id), role);
   }));
 
@@ -425,8 +441,12 @@ function createApiRouter({ db, sessions, access, billing, mailer, config, notifi
       }
       customDomain = d || null;
     }
+    const domainChanged = customDomain !== site.custom_domain;
     try {
       db.prepare('UPDATE sites SET name = ?, custom_domain = ? WHERE id = ?').run(name, customDomain, site.id);
+      if (domainChanged) {
+        db.prepare('UPDATE sites SET domain_token = ?, domain_verified_at = NULL WHERE id = ?').run(customDomain ? newDomainToken() : null, site.id);
+      }
     } catch (err) {
       if (isUniqueViolation(err)) throw new HttpError(409, 'Tên miền đã được gắn với website khác');
       throw err;
