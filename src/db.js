@@ -254,6 +254,18 @@ CREATE TABLE IF NOT EXISTS invoice_requests (
 
 CREATE INDEX IF NOT EXISTS idx_invoice_requests_status ON invoice_requests(status, id);
 CREATE INDEX IF NOT EXISTS idx_invoice_requests_workspace ON invoice_requests(workspace_id, id);
+
+-- Zalo OA token pair per site (rotates on every refresh; never sent to clients).
+-- seed_hash = sha256 of the refresh token saved in site settings that started the chain.
+CREATE TABLE IF NOT EXISTS zalo_tokens (
+  site_id INTEGER PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE,
+  seed_hash TEXT NOT NULL,
+  refresh_token TEXT NOT NULL,
+  access_token TEXT,
+  expires_at INTEGER,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_ab_page ON ab_tests(page_id, status);
 CREATE INDEX IF NOT EXISTS idx_assets_workspace ON assets(workspace_id, id);
 CREATE INDEX IF NOT EXISTS idx_versions_page ON page_versions(page_id, id);

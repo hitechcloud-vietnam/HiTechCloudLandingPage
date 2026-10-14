@@ -6,6 +6,8 @@ const https = require('node:https');
 const net = require('node:net');
 const { parse } = require('./siteSettings');
 const { logger } = require('./logger');
+const { isPhoneField, isEmailField } = require('./leadGuard');
+const { createZaloClient } = require('./zalo');
 
 // Blocks webhook delivery to loopback, private, link-local (cloud metadata)
 // and other non-public ranges so a customer webhook cannot probe our network.
@@ -89,6 +91,36 @@ function discordPayload(text) {
   return { content: truncate(text, DISCORD_MAX), allowed_mentions: { parse: [] } };
 }
 
+const ZALO_MAX = 2000;
+const ZALO_VALUE_MAX = 120;
+const ZALO_EXTRA_FIELDS = 5;
+const NAME_FIELD_RE = /^(name|full_?name|your_?name|ho_?va_?ten|ho_?ten|ten|ten_?khach_?hang)$/;
+
+function isNameField(key) {
+  return NAME_FIELD_RE.test(String(key).toLowerCase().replace(/[\s-]+/g, '_'));
+}
+
+// Short plain-text message for Zalo: contact fields first, other fields cut down.
+function zaloText({ site, pageSlug, data, source = {}, link }) {
+  const oneLine = (v, max) => truncate(String(v).replace(/\s+/g, ' ').trim(), max);
+  const entries = Object.entries(data);
+  const used = new Set();
+  const lines = [`🔔 Lead mới từ "${site.name}" (/${pageSlug === 'index' ? '' : pageSlug})`];
+  for (const [label, test] of [['Họ tên', isNameField], ['SĐT', (k) => isPhoneField(k)], ['Email', isEmailField]]) {
+    const hit = entries.find(([k, v]) => !used.has(k) && test(k) && String(v).trim());
+    if (!hit) continue;
+    used.add(hit[0]);
+    lines.push(`${label}: ${oneLine(hit[1], 200)}`);
+  }
+  const rest = entries.filter(([k, v]) => !used.has(k) && String(v).trim());
+  for (const [k, v] of rest.slice(0, ZALO_EXTRA_FIELDS)) lines.push(`${oneLine(k, 40)}: ${oneLine(v, ZALO_VALUE_MAX)}`);
+  if (rest.length > ZALO_EXTRA_FIELDS) lines.push(`(+${rest.length - ZALO_EXTRA_FIELDS} trường khác)`);
+  const utm = [source.utm_source, source.utm_campaign].filter(Boolean).map((v) => oneLine(v, 60)).join(' / ');
+  if (utm) lines.push(`Nguồn: ${utm}`);
+  lines.push(`Xem chi tiết: ${link}`);
+  return truncate(lines.join('\n'), ZALO_MAX);
+}
+
 // Flat row for a Google Apps Script appendRow(); built-in columns win over form fields of the same name.
 function sheetsRow({ site, pageSlug, data, source = {}, createdAt }) {
   const row = { createdAt, site: site.name, page: pageSlug };
@@ -102,6 +134,7 @@ function sheetsRow({ site, pageSlug, data, source = {}, createdAt }) {
 function createNotifier({ db, config, mailer }) {
   const fetch = config.fetch || globalThis.fetch;
   const allowPrivateWebhooks = !!config.allowPrivateWebhooks; // tests only
+  const zalo = createZaloClient({ db, config, fetch });
 
   // POSTs JSON through the injected transport (tests) or the SSRF-guarded https client.
   // Redirects are never followed; okRedirect treats 3xx as delivered.
@@ -147,31 +180,35 @@ function createNotifier({ db, config, mailer }) {
     return [...list];
   }
 
-  // Delivers a new-lead notification on every configured channel.
-  // Returns per-channel results; never throws.
-  async function leadCreated({ site, pageSlug, data, source = {}, createdAt = new Date().toISOString() }) {
+  // Delivers a new-lead notification on every configured channel (or only
+  // on `only`, for a per-channel test). Returns per-channel results; never throws.
+  async function leadCreated({ site, pageSlug, data, source = {}, createdAt = new Date().toISOString(), only }) {
     const settings = parse(site);
+    const want = (name) => !only || only === name;
     const link = `${config.appUrl}/app/site?id=${site.id}`;
     const text = `🔔 Lead mới từ "${site.name}" (/${pageSlug === 'index' ? '' : pageSlug})\n\n${formatLead(data)}\n\nXem tất cả: ${link}`;
     const jobs = {};
-    const to = recipients(site, settings);
+    const to = want('email') ? recipients(site, settings) : [];
     if (to.length) {
       jobs.email = Promise.all(to.map((addr) => mailer.send({ to: addr, subject: `Lead mới từ ${site.name}`, text }))).then(() => true);
     }
-    if (settings.webhookUrl) {
+    if (want('webhook') && settings.webhookUrl) {
       jobs.webhook = sendWebhook(settings, { event: 'lead.created', site: { id: site.id, name: site.name, subdomain: site.subdomain }, page: pageSlug, data, createdAt });
     }
-    if (settings.telegramBotToken && settings.telegramChatId) jobs.telegram = sendTelegram(settings, text);
+    if (want('telegram') && settings.telegramBotToken && settings.telegramChatId) jobs.telegram = sendTelegram(settings, text);
     // Fixed public hosts (validated in siteSettings), so no private-address check needed.
-    if (settings.slackWebhookUrl) {
+    if (want('slack') && settings.slackWebhookUrl) {
       jobs.slack = postJson(settings.slackWebhookUrl, slackPayload({ site, pageSlug, data, link }), { name: 'Slack' });
     }
-    if (settings.discordWebhookUrl) {
+    if (want('discord') && settings.discordWebhookUrl) {
       jobs.discord = postJson(settings.discordWebhookUrl, discordPayload(text), { name: 'Discord' });
     }
-    if (settings.sheetsWebhookUrl) {
+    if (want('sheets') && settings.sheetsWebhookUrl) {
       // Apps Script answers a POST with a 302 to the script output: that means success.
       jobs.sheets = postJson(settings.sheetsWebhookUrl, sheetsRow({ site, pageSlug, data, source, createdAt }), { okRedirect: true, name: 'Google Sheets' });
+    }
+    if (want('zalo') && settings.zaloRefreshToken && settings.zaloUserIds && settings.zaloUserIds.length) {
+      jobs.zalo = zalo.send({ siteId: site.id, refreshToken: settings.zaloRefreshToken, userIds: settings.zaloUserIds, text: zaloText({ site, pageSlug, data, source, link }) });
     }
 
     const results = {};
@@ -189,7 +226,7 @@ function createNotifier({ db, config, mailer }) {
     return results;
   }
 
-  return { leadCreated };
+  return { leadCreated, zalo };
 }
 
-module.exports = { createNotifier, isPrivateAddress, assertPublicUrl, guardedLookup, httpsPostJson, truncate, slackPayload, discordPayload, sheetsRow };
+module.exports = { createNotifier, isPrivateAddress, assertPublicUrl, guardedLookup, httpsPostJson, truncate, slackPayload, discordPayload, sheetsRow, zaloText };
