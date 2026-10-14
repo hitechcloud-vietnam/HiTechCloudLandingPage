@@ -1,0 +1,133 @@
+# HiTechCloud LandingPage
+
+Nền tảng **SaaS tạo landing page kéo thả** cho doanh nghiệp Việt Nam, do HiTechCloud-VN / Pho Tue SoftWare Solutions JSC phát triển.
+
+Lõi trình thiết kế dùng [GrapesJS](https://github.com/GrapesJS/grapesjs). Kiến trúc SaaS (workspace, xuất bản, tên miền, thu lead) được thiết kế tham khảo ý tưởng từ [Webstudio](https://github.com/webstudio-is/webstudio) và [OpenPage](https://github.com/buildingopen/openpage), nhưng **không sao chép mã nguồn** của hai dự án này. Lý do xem mục [Giấy phép](#giấy-phép-mã-nguồn-bên-thứ-ba).
+
+## Tính năng
+
+| Nhóm | Chi tiết |
+|---|---|
+| Trình thiết kế | Kéo thả trên GrapesJS, xem trước theo máy tính / tablet / điện thoại, 8 section dựng sẵn (Hero, Tính năng, Bảng giá, Đánh giá, Form thu lead, CTA…), tự động lưu, phím tắt Ctrl+S |
+| Mẫu khởi đầu | Trang trắng, Sản phẩm SaaS, Thu lead nhanh, Sự kiện/Webinar |
+| Xuất bản | Tách bản nháp và bản đã xuất bản, gỡ xuất bản, xem trước bản nháp, cài SEO (title, meta description, OG) |
+| Tên miền | `/p/<subdomain>`, `<subdomain>.<PUBLISH_ROOT_DOMAIN>`, tên miền riêng (gói Pro trở lên) |
+| Thu lead | Mọi `<form>` trên trang đã xuất bản tự gửi về hệ thống. Có chống spam (honeypot + giới hạn tần suất), xuất CSV (chống CSV injection) |
+| Nhiều người thuê | Nhiều workspace cho mỗi người dùng, vai trò Chủ sở hữu / Quản trị viên / Biên tập viên, dữ liệu cách ly theo workspace |
+| Gói dịch vụ | Miễn phí / Pro / Business, giới hạn số website, trang, thành viên, lead/tháng, tên miền riêng, gỡ nhãn "Tạo bởi HiTechCloud" |
+| Thanh toán | **payOS** (VietQR) và **Pay2S**. Thanh toán theo chu kỳ 1 tháng hoặc 12 tháng (tặng 2 tháng). Gói tự hết hạn và quay về gói Miễn phí. Gia hạn được cộng dồn vào thời gian còn lại. Webhook xác thực chữ ký HMAC, xử lý trùng lặp an toàn (idempotent) và đối chiếu số tiền |
+| Quản trị nền tảng | `/app/admin`: số người dùng, workspace trả phí, MRR, doanh thu, danh sách khách hàng, lịch sử giao dịch, cấp gói thủ công |
+| Thống kê | Lượt xem trang 30 ngày (bỏ qua bot), số lead và tỉ lệ chuyển đổi theo từng trang |
+| Bảo mật | Mật khẩu băm scrypt, session lưu trong DB (cookie httpOnly, SameSite=Lax), chống CSRF (kiểm tra Origin và bắt buộc body JSON), trang khách hàng phục vụ trên domain dashboard được cô lập bằng `CSP: sandbox` |
+
+## Chạy thử
+
+Yêu cầu Node.js 22.13 trở lên (dùng SQLite tích hợp sẵn `node:sqlite`, không cần cài database).
+
+```bash
+npm install
+npm start            # http://localhost:3000
+npm test             # chạy bộ test API
+```
+
+Bắt đầu tại `http://localhost:3000/app/signup`.
+
+### Docker
+
+```bash
+docker build -t hitechcloud-landingpage .
+docker run -p 3000:3000 -v htc-data:/data --env-file .env hitechcloud-landingpage
+```
+
+Các biến cấu hình nằm trong `.env.example`.
+
+## Triển khai production
+
+1. Dashboard đặt tại `APP_URL`, ví dụ `https://app.hitechcloud.vn`.
+2. Trỏ wildcard DNS `*.hitechcloud.site` về máy chủ và đặt `PUBLISH_ROOT_DOMAIN=hitechcloud.site`. Nên dùng **tên miền gốc khác** với dashboard để cô lập cookie.
+3. Tên miền riêng của khách hàng: khách trỏ CNAME về máy chủ. Reverse proxy (Caddy với *on-demand TLS*, hoặc Traefik) cấp chứng chỉ HTTPS tự động.
+4. Đặt `SUPERADMIN_EMAILS` để quản trị viên nền tảng đổi gói cho khách.
+
+## Cấu hình cổng thanh toán
+
+Cổng nào có đủ biến môi trường thì sẽ hiện trong tab **Gói dịch vụ**. Xem `.env.example`.
+
+### payOS
+1. Tạo kênh thanh toán tại https://my.payos.vn và lấy `Client ID`, `API Key`, `Checksum Key`.
+2. Khai báo Webhook URL: `<APP_URL>/api/billing/webhooks/payos`. Khi payOS gửi sự kiện thử, hệ thống trả 200.
+3. Luồng xử lý:
+   - Tạo link bằng `POST /v2/payment-requests`.
+   - Khách thanh toán xong, payOS gửi webhook. Hệ thống xác thực chữ ký rồi kích hoạt gói.
+   - Khi khách quay về `returnUrl`, hệ thống gọi thêm `GET /v2/payment-requests/{orderCode}` để kiểm tra. Nhờ vậy gói vẫn được kích hoạt nếu webhook đến chậm.
+
+### Pay2S
+1. Lấy `partnerCode`, `accessKey`, `secretKey` từ trang quản trị Pay2S. Đặt `PAY2S_ENV=sandbox` để thử nghiệm, `production` khi chạy thật.
+2. Hệ thống gửi `ipnUrl = <APP_URL>/api/billing/webhooks/pay2s` kèm mỗi giao dịch.
+3. Luồng xử lý:
+   - Tạo giao dịch bằng `POST /v1/gateway/api/create`.
+   - Chữ ký là HMAC-SHA256 trên các trường theo thứ tự cố định.
+   - IPN và URL chuyển hướng về đều được xác thực bằng `m2signature`. `resultCode = 0` nghĩa là thành công.
+
+> ⚠️ Môi trường phát triển không truy cập được `payos.vn` và `docs.pay2s.vn` (bị chặn mạng). Vì vậy đặc tả được lấy từ mã nguồn SDK:
+> - payOS: SDK chính thức `@payos/node`. Chữ ký đã được kiểm tra trùng khớp với SDK.
+> - Pay2S: gói cộng đồng `pay2s-node`. Đây **không phải SDK chính thức**.
+>
+> Trước khi chạy production, cần **chạy thử trên sandbox Pay2S** để xác nhận tên trường URL thanh toán trả về (`payUrl`), mã thành công và nội dung phản hồi IPN mà Pay2S yêu cầu.
+
+## Kiến trúc
+
+```
+src/
+  server.js          Khởi động server
+  app.js             Ghép middleware, CSRF, phục vụ thư viện GrapesJS
+  config.js          Biến môi trường
+  db.js              Schema SQLite
+  auth.js            Băm mật khẩu, session cookie
+  access.js          Kiểm tra quyền và cách ly dữ liệu theo workspace
+  plans.js           Định nghĩa gói, giới hạn, giá theo chu kỳ, hết hạn gói
+  billing.js         Tạo đơn, xử lý webhook/return, kích hoạt và gia hạn gói
+  payments/payos.js  Kết nối payOS (ký và xác thực HMAC-SHA256)
+  payments/pay2s.js  Kết nối Pay2S (ký và xác thực m2signature)
+  templates.js       Section và mẫu landing page
+  render.js          Render HTML trang đã xuất bản, chuyển hướng form về endpoint thu lead
+  routes/api.js      REST API cho dashboard và editor
+  routes/sites.js    Phục vụ trang đã xuất bản (theo host hoặc /p/), xem trước, thu lead
+public/
+  index.html         Trang giới thiệu sản phẩm
+  app/               Dashboard (đăng nhập, workspace, website, lead, thanh toán), admin.html
+  editor.html        Trình thiết kế GrapesJS
+test/                Test API bằng node:test
+```
+
+### API chính
+
+| Method | Đường dẫn | Mô tả |
+|---|---|---|
+| POST | `/api/auth/signup`, `/api/auth/login`, `/api/auth/logout` | Xác thực |
+| GET | `/api/auth/me` | Người dùng và danh sách workspace |
+| GET/PATCH/DELETE | `/api/workspaces/:id` | Workspace, gói, mức sử dụng |
+| GET/POST/DELETE | `/api/workspaces/:id/members[/:uid]` | Thành viên |
+| POST | `/api/workspaces/:id/checkout` | Tạo đơn thanh toán `{plan, months, provider}`, trả về `checkoutUrl` |
+| GET | `/api/workspaces/:id/orders` | Lịch sử thanh toán |
+| POST | `/api/billing/webhooks/payos`, `/api/billing/webhooks/pay2s` | Webhook / IPN từ cổng thanh toán |
+| GET | `/api/admin/stats`, `/api/admin/workspaces`, `/api/admin/orders` | Quản trị nền tảng |
+| POST | `/api/workspaces/:id/plan` | Cấp gói thủ công `{plan, months?}` (chỉ super admin) |
+| GET/POST | `/api/workspaces/:id/sites` | Website |
+| GET/PATCH/DELETE | `/api/sites/:id` | Website, tên miền riêng |
+| GET/POST | `/api/sites/:id/pages` | Trang |
+| GET/PUT | `/api/pages/:id/project` | Lưu và tải dự án GrapesJS |
+| POST | `/api/pages/:id/publish`, `/unpublish` | Xuất bản |
+| GET | `/api/sites/:id/leads[?format=csv]` | Lead |
+
+## Lộ trình tiếp theo
+
+- Xuất hóa đơn VAT điện tử sau khi thanh toán, gửi email nhắc gia hạn trước ngày hết hạn.
+- Thư viện ảnh / upload asset lên S3-compatible storage.
+- Xác minh quyền sở hữu tên miền riêng (TXT record) trước khi kích hoạt.
+- Gửi email / webhook / Zalo khi có lead mới. Mời thành viên qua email.
+- Chuyển sang PostgreSQL khi mở rộng nhiều instance.
+- A/B testing, thống kê lượt xem và tỉ lệ chuyển đổi.
+
+## Giấy phép mã nguồn bên thứ ba
+
+Xem [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
