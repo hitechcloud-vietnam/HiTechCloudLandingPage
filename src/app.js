@@ -142,6 +142,15 @@ function createApp({ db, config }) {
   app.use(metrics.unmatched);
   app.use(express.static(path.join(ROOT, 'public'), { extensions: ['html'] }));
 
+  // Branded 404 for browsers; plain text for everything else.
+  app.use((req, res) => {
+    res.status(404);
+    if ((req.method === 'GET' || req.method === 'HEAD') && req.accepts('html')) {
+      return res.sendFile(path.join(ROOT, 'public', '404.html'));
+    }
+    res.type('text/plain').send('Không tìm thấy');
+  });
+
   app.use((err, req, res, _next) => {
     const status = err.status || err.statusCode || 500;
     if (status >= 500) {

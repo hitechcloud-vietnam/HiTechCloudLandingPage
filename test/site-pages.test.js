@@ -102,3 +102,17 @@ test('marketing site and legal pages', async (t) => {
     for (const path of ['/', '/terms', '/privacy', '/refund', '/contact']) assert.ok(locs.includes(path), path);
   });
 });
+
+test('unknown dashboard URLs get the branded 404 page', async () => {
+  const { startServer: start } = require('./helpers');
+  const { server, base } = await start();
+  try {
+    const res = await fetch(`${base}/khong-ton-tai`, { headers: { Accept: 'text/html' } });
+    assert.equal(res.status, 404);
+    assert.match(await res.text(), /<html lang="vi"/);
+    const asset = await fetch(`${base}/khong-ton-tai.js`, { headers: { Accept: '*/*' } });
+    assert.equal(asset.status, 404);
+  } finally {
+    server.close();
+  }
+});

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { renderPage, widgetScripts } = require('../src/render');
 const { listBlocks, renderTemplate, BASE_CSS } = require('../src/templates');
-const { startServer, client } = require('./helpers');
+const { startServer, client, verifyEmail } = require('./helpers');
 
 const render = (html) => renderPage({ page: { slug: 'index', title: 'T' }, site: { id: 1 }, html, css: '', showBranding: false });
 const scripts = (html) => (html.match(/<script>[\s\S]*?<\/script>/g) || []);
@@ -86,10 +86,11 @@ test('templates use widgets sparingly', () => {
 });
 
 test('published popup forms post leads to the platform endpoint', async (t) => {
-  const { server, base } = await startServer();
+  const { server, base, db } = await startServer();
   t.after(() => server.close());
   const c = client(base);
   await c('POST', '/api/auth/signup', { name: 'Chủ', email: 'owner@example.com', password: 'matkhau123' });
+  verifyEmail(db, 'owner@example.com');
   const wsId = (await c('GET', '/api/auth/me')).data.workspaces[0].id;
   const site = (await c('POST', `/api/workspaces/${wsId}/sites`, { name: 'Shop', subdomain: 'shop', template: 'blank' })).data;
   const page = (await c('GET', `/api/sites/${site.id}/pages`)).data[0];
